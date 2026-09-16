@@ -8,6 +8,7 @@
 # socket + ACR config.json so buildx/tag/push reuse the host daemon & auth.
 FROM eclipse-temurin:17-jdk-noble
 
+
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_VERSION=22.22.1
 

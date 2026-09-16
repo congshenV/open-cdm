@@ -6,9 +6,9 @@
 // chain runs inside a dedicated build image (package/docker/build-env.Dockerfile)
 // that provides JDK 17, Node 22, Docker CLI + buildx. The agent only:
 //   1. builds the build-env image,
-//   2. runs the compile + docker-build + tag + push chain inside it,
-//      mounting the host docker socket + ACR config.json so buildx and
-//      docker push reuse the host daemon & registry credentials.
+//   2. runs package/docker/ci-run.sh inside it, which compiles, packages,
+//      builds docker images and tags/pushes to ACR. The host docker socket
+//      and ACR config.json are mounted so buildx/push reuse the host daemon.
 //
 // Builder agent prerequisites:
 //   - docker (agent is a docker-in-docker or socket-mounted container)
@@ -31,6 +31,7 @@ pipeline {
         NAMESPACE    = 'ack'                          // TODO: your ACR namespace
         SERVICES     = 'console sidecar'
         BUILD_ARCH   = 'x86_64'
+        WORKSPACE    = '${WORKSPACE}'
     }
 
     stages {
@@ -65,7 +66,7 @@ Commit:        ${env.GIT_COMMIT ?: 'unknown'}
         stage('Prepare Build Image') {
             steps {
                 script {
-                    sh 'cd package/docker && docker build -f build-env.Dockerfile -t ${BUILD_IMAGE} .'
+                    sh 'cd package/docker && docker build -f build-env.Dockerfile -t cgdm-build-env:ci .'
                 }
             }
         }
@@ -73,36 +74,16 @@ Commit:        ${env.GIT_COMMIT ?: 'unknown'}
         stage('Compile, Package, Build & Push') {
             steps {
                 script {
-                    def services = env.SERVICES.tokenize()
-                    def pushCmds = services.collect { svc ->
-                        def src = "clougence/cgdm-${svc}:${env.BUILD_ARCH}-${env.BUILD_VERSION}"
-                        def dst = "${env.ACR}/${env.NAMESPACE}/cgdm-${svc}:${env.IMAGE_TAG}"
-                        """
-                        echo "Tagging  \${src} -> \${dst}"
-                        docker tag \${src} \${dst}
-                        echo "Pushing  \${dst}"
-                        docker push \${dst}
-                        echo "Pushed:  \${dst}"
-                        """
-                    }.join('\n')
-
-                    sh """
-                        set -euo pipefail
-                        docker run --rm \
-                            -v \"\$(pwd)\":/workspace \
-                            -v /var/run/docker.sock:/var/run/docker.sock \
-                            -v \"\$HOME/.docker/config.json\":/root/.docker/config.json \
-                            -w /workspace \
-                            \${BUILD_IMAGE} \
-                            bash -lc '
-                                set -euo pipefail
-                                export DOCKER_HOST=
-                                cd package
-                                ./package.sh --build
-                                ./package.sh --docker ${env.BUILD_ARCH}
-                                ${pushCmds}
-                            '
-                    """
+                    withEnv([
+                        'BUILD_ARCH=' + env.BUILD_ARCH,
+                        'BUILD_VERSION=' + env.BUILD_VERSION,
+                        'IMAGE_TAG=' + env.IMAGE_TAG,
+                        'ACR=' + env.ACR,
+                        'NAMESPACE=' + env.NAMESPACE,
+                        'SERVICES=' + env.SERVICES
+                    ]) {
+                        sh 'cd package/docker && bash ci-run-docker.sh'
+                    }
                 }
             }
         }
@@ -125,23 +106,20 @@ Tag:   ${env.IMAGE_TAG}
             }
         }
         failure {
-            echo """
-===========================================
-  Build failed
-===========================================
-Troubleshooting:
-  1. Builder must have docker + a reachable dev MySQL 8.
-  2. The build happens inside cgdm-build-env:ci (JDK17+Node22+buildx),
-     so the agent's own JVM version no longer matters.
-  3. Confirm the agent is logged into the ACR (~/.docker/config.json).
-  4. Re-run locally:
-       docker build -f package/docker/build-env.Dockerfile -t cgdm-build-env:ci .
-       docker run --rm -v "\\$(pwd)":/workspace \
-           -v /var/run/docker.sock:/var/run/docker.sock \
-           -v "\\$HOME/.docker/config.json":/root/.docker/config.json \
-           -w /workspace cgdm-build-env:ci \
-           bash -lc 'cd package && ./package.sh --build && ./package.sh --docker ${env.BUILD_ARCH}'
-"""
+            echo '==========================================='
+            echo '  Build failed'
+            echo '==========================================='
+            echo 'Troubleshooting:'
+            echo '  1. Builder must have docker + a reachable dev MySQL 8.'
+            echo '  2. The build happens inside cgdm-build-env:ci (JDK17+Node22+buildx),'
+            echo '     so the agent JVM version no longer matters.'
+            echo '  3. Confirm the agent is logged into the ACR (~/.docker/config.json).'
+            echo '  4. Re-run locally:'
+            echo '       docker build -t cgdm-build-env:ci package/docker'
+            echo '       docker run --rm -v PWD:/workspace \\'
+            echo '           -v /var/run/docker.sock:/var/run/docker.sock \\'
+            echo '           -v HOME/.docker/config.json:/root/.docker/config.json \\'
+            echo '           -w /workspace cgdm-build-env:ci bash package/docker/ci-run.sh'
         }
     }
 }
