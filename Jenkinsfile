@@ -1,19 +1,19 @@
 // Build the CloudDM console and sidecar Docker images and push them to
 // an Aliyun ACR registry.
 //
-// Images are produced by the repo's own toolchain, not a hand-rolled build:
-//   - `package/package.sh --build`  compiles backend + frontend and emits the tgz
-//     payloads (`package/build/cgdm-{console,sidecar,alone}.tar.gz`).
-//   - `package/package.sh --docker x86_64` then runs `package/docker/build-docker.sh`,
-//     which builds each image with the matching `package/docker/{service}.Dockerfile`
-//     (so console.Dockerfile / sidecar.Dockerfile are used) using the `shared/`
-//     content as the build context.
-// This Jenkinsfile only composes that chain and pushes the console+sidecar results.
+// The builder agent is itself a container (often with only an old JVM),
+// so we do NOT rely on the agent's own toolchain. Instead the whole build
+// chain runs inside a dedicated build image (package/docker/build-env.Dockerfile)
+// that provides JDK 17, Node 22, Docker CLI + buildx. The agent only:
+//   1. builds the build-env image,
+//   2. runs the compile + docker-build + tag + push chain inside it,
+//      mounting the host docker socket + ACR config.json so buildx and
+//      docker push reuse the host daemon & registry credentials.
 //
 // Builder agent prerequisites:
-//   - docker + buildx, JDK 17+, Gradle 9.5+, Node 22 (backend + frontend build)
+//   - docker (agent is a docker-in-docker or socket-mounted container)
 //   - a reachable dev MySQL 8 (package.sh --build needs it for an init-time check)
-//   - ACR credentials in ~/.docker/config.json on the agent (docker login once)
+//   - ACR credentials in ~/.docker/config.json on the agent
 
 pipeline {
     agent { label 'agent-hk-1' }   // TODO: replace with your builder label
@@ -26,6 +26,7 @@ pipeline {
     }
 
     environment {
+        BUILD_IMAGE  = 'cgdm-build-env:ci'
         ACR          = 'rmain-registry.cn-beijing.cr.aliyuncs.com'   // TODO: your ACR endpoint
         NAMESPACE    = 'ack'                          // TODO: your ACR namespace
         SERVICES     = 'console sidecar'
@@ -36,7 +37,6 @@ pipeline {
         stage('Setup') {
             steps {
                 script {
-                    // Same version the repo's own packaging uses (package.sh reads it too).
                     env.BUILD_VERSION = sh(
                         returnStdout: true,
                         script: 'grep "^cg\\.clouddm\\.main\\.version=" backend/gradle.properties | cut -d= -f2 | tr -d "[:space:]"'
@@ -60,42 +60,49 @@ Commit:        ${env.GIT_COMMIT ?: 'unknown'}
             }
         }
 
-        stage('Compile & Package') {
+        // The agent may only have an old JVM, so we build our own build image
+        // once and run the entire chain inside it.
+        stage('Prepare Build Image') {
             steps {
                 script {
-                    // Emits package/build/cgdm-{console,sidecar,alone}.tar.gz.
-                    sh 'cd package && ./package.sh --build'
+                    sh 'cd package/docker && docker build -f build-env.Dockerfile -t ${BUILD_IMAGE} .'
                 }
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Compile, Package, Build & Push') {
             steps {
                 script {
-                    // Runs docker/build-docker.sh; builds console.Dockerfile / sidecar.Dockerfile
-                    // (and alone.Dockerfile) via buildx. Local tags are:
-                    //   clougence/cgdm-{svc}:${BUILD_ARCH}-${BUILD_VERSION}
-                    sh 'cd package && ./package.sh --docker ${BUILD_ARCH}'
-                }
-            }
-        }
-
-        stage('Tag & Push (console, sidecar)') {
-            steps {
-                script {
-                    SERVICES_LIST = env.SERVICES.tokenize()
-                    for (svc in SERVICES_LIST) {
+                    def services = env.SERVICES.tokenize()
+                    def pushCmds = services.collect { svc ->
                         def src = "clougence/cgdm-${svc}:${env.BUILD_ARCH}-${env.BUILD_VERSION}"
                         def dst = "${env.ACR}/${env.NAMESPACE}/cgdm-${svc}:${env.IMAGE_TAG}"
-                        sh """
-                            set -euo pipefail
-                            echo "Tagging  \${src} -> \${dst}"
-                            docker tag \${src} \${dst}
-                            echo "Pushing  \${dst}"
-                            docker push \${dst}
-                            echo "Pushed:  \${dst}"
                         """
-                    }
+                        echo "Tagging  \${src} -> \${dst}"
+                        docker tag \${src} \${dst}
+                        echo "Pushing  \${dst}"
+                        docker push \${dst}
+                        echo "Pushed:  \${dst}"
+                        """
+                    }.join('\n')
+
+                    sh """
+                        set -euo pipefail
+                        docker run --rm \
+                            -v \"\$(pwd)\":/workspace \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            -v \"\$HOME/.docker/config.json\":/root/.docker/config.json \
+                            -w /workspace \
+                            \${BUILD_IMAGE} \
+                            bash -lc '
+                                set -euo pipefail
+                                export DOCKER_HOST=
+                                cd package
+                                ./package.sh --build
+                                ./package.sh --docker ${env.BUILD_ARCH}
+                                ${pushCmds}
+                            '
+                    """
                 }
             }
         }
@@ -123,16 +130,18 @@ Tag:   ${env.IMAGE_TAG}
   Build failed
 ===========================================
 Troubleshooting:
-  1. Builder must have docker + buildx, JDK 17+, Gradle 9.5+, Node 22,
-     and reachable dev MySQL 8.
-  2. Confirm builder is logged into the ACR (~/.docker/config.json).
-  3. package.sh --build compiles backend + frontend first; a build error
-     in the backend (gradle) or frontend (npm) will fail here.
-  4. Re-run locally: cd package && ./package.sh --build --docker x86_64
+  1. Builder must have docker + a reachable dev MySQL 8.
+  2. The build happens inside cgdm-build-env:ci (JDK17+Node22+buildx),
+     so the agent's own JVM version no longer matters.
+  3. Confirm the agent is logged into the ACR (~/.docker/config.json).
+  4. Re-run locally:
+       docker build -f package/docker/build-env.Dockerfile -t cgdm-build-env:ci .
+       docker run --rm -v "\\$(pwd)":/workspace \
+           -v /var/run/docker.sock:/var/run/docker.sock \
+           -v "\\$HOME/.docker/config.json":/root/.docker/config.json \
+           -w /workspace cgdm-build-env:ci \
+           bash -lc 'cd package && ./package.sh --build && ./package.sh --docker ${env.BUILD_ARCH}'
 """
-        }
-        always {
-            cleanWs()
         }
     }
 }
