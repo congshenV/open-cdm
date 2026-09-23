@@ -41,6 +41,7 @@ RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27
     && rm -rf /tmp/docker /tmp/docker.tgz
 
 ENV PATH="/usr/local/bin:${PATH}"
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
 WORKDIR /workspace
 
