@@ -31,7 +31,6 @@ pipeline {
         NAMESPACE    = 'ack'                          // TODO: your ACR namespace
         SERVICES     = 'console sidecar'
         BUILD_ARCH   = 'x86_64'
-        WORKSPACE    = '${WORKSPACE}'
     }
 
     stages {
