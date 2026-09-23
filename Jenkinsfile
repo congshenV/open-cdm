@@ -12,8 +12,12 @@
 //
 // Builder agent prerequisites:
 //   - docker (agent is a docker-in-docker or socket-mounted container)
-//   - a reachable dev MySQL 8 (package.sh --build needs it for an init-time check)
-//   - ACR credentials in ~/.docker/config.json on the agent
+//     NOTE: because the agent is dind, do NOT bind-mount the workspace by host
+//     path into the build container - the outer daemon would resolve it on the
+//     host where it does not exist. ci-run-docker.sh streams it in instead.
+//   - ACR credentials in ~/.docker/config.json on the agent.
+// The build itself (compile/tgz/docker) does not connect to a database; MySQL
+// is only a runtime requirement of CloudDM, not a build-time one.
 
 pipeline {
     agent { label 'agent-hk-1' }   // TODO: replace with your builder label
@@ -109,16 +113,13 @@ Tag:   ${env.IMAGE_TAG}
             echo '  Build failed'
             echo '==========================================='
             echo 'Troubleshooting:'
-            echo '  1. Builder must have docker + a reachable dev MySQL 8.'
+            echo '  1. Agent needs docker (dind) + ACR creds in ~/.docker/config.json.'
             echo '  2. The build happens inside cgdm-build-env:ci (JDK17+Node22+buildx),'
             echo '     so the agent JVM version no longer matters.'
-            echo '  3. Confirm the agent is logged into the ACR (~/.docker/config.json).'
-            echo '  4. Re-run locally:'
-            echo '       docker build -t cgdm-build-env:ci package/docker'
-            echo '       docker run --rm -v PWD:/workspace \\'
-            echo '           -v /var/run/docker.sock:/var/run/docker.sock \\'
-            echo '           -v HOME/.docker/config.json:/root/.docker/config.json \\'
-            echo '           -w /workspace cgdm-build-env:ci bash package/docker/ci-run.sh'
+            echo '  3. No DB is needed at build time; MySQL is a runtime-only dependency.'
+            echo '  4. Use ci-run-docker.sh (dind-ready) rather than manual -v bind mounts:'
+            echo '       WORKSPACE=PWD BUILD_VERSION=x IMAGE_TAG=y ACR=z NAMESPACE=w \\'
+            echo '       bash package/docker/ci-run-docker.sh'
         }
     }
 }
