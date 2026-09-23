@@ -9,6 +9,11 @@
 - 本文件约束源码、文档、配置、脚本和测试变更；默认不要修改生成产物、依赖目录和构建输出，例如 `backend/**/build/`、
   `frontend/node_modules/`、`frontend/dist/`、`package/build/`。
 
+## 项目来源
+
+- 开源上游仓库：https://github.com/ClouGence/open-cdm
+- 本仓库为 siliconflow 组织的 fork：https://github.com/siliconflow/open-cdm
+
 ## 项目定位
 
 - open-cdm 是 CloudDM 的开源工程，面向团队数据库管理。
