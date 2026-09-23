@@ -14,7 +14,7 @@ ARG NODE_VERSION=22.22.1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git perl bash lsb-release gnupg \
+        ca-certificates curl git perl bash lsb-release gnupg xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 22.22.1 exact version (matches frontend/AGENTS.md toolchain).
