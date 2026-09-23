@@ -24,6 +24,7 @@ WORKSPACE="${WORKSPACE:?WORKSPACE is required}"
 BUILD_IMAGE="${BUILD_IMAGE:-cgdm-build-env:ci}"
 
 CID="$(docker run -d \
+    --memory=12g \
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${BUILD_IMAGE}" \
     sleep infinity)"
