@@ -43,6 +43,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RedisMetaProviderDm extends AbstractMetadataProvider implements MetaDataService {
 
+    // Upper bound for the database-count probe. Real Redis deployments configure far fewer
+    // databases; this only guards against endless probing in abnormal cases.
+    private static final int PROBE_LIMIT = 256;
+
     public RedisMetaProviderDm(Connection connection){
         super(connection);
     }
@@ -63,11 +67,91 @@ public class RedisMetaProviderDm extends AbstractMetadataProvider implements Met
     }
 
     public List<Value> selectSchemas() throws SQLException {
-        String sql = "config get databases";
-        try (Connection conn = this.connectSupplier.eGet(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            try (ResultSet rs = ps.executeQuery()) {
-                return RedisMetaProviderUtils.convertSchema(rs);
+        try (Connection conn = this.connectSupplier.eGet()) {
+            try {
+                return querySchemasByConfig(conn);
+            } catch (SQLException e) {
+                // Some managed cloud services disable the CONFIG command (typical error:
+                // "ERR unknown command 'CONFIG'..."). In that case fall back to probing the real
+                // database count with SELECT; permission and other errors are still rethrown.
+                if (!isConfigUnsupported(e)) {
+                    throw e;
+                }
+                log.warn("CONFIG GET databases unsupported, fallback to SELECT probe.");
+                return RedisMetaProviderUtils.buildSchemaValues(probeDatabaseCount(conn));
             }
+        }
+    }
+
+    private List<Value> querySchemasByConfig(Connection conn) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("config get databases"); ResultSet rs = ps.executeQuery()) {
+            return RedisMetaProviderUtils.convertSchema(rs);
+        }
+    }
+
+    /**
+     * Whether CONFIG is disabled: the typical error message contains "unknown command 'CONFIG'".
+     * Permission and other errors do not match.
+     */
+    private boolean isConfigUnsupported(SQLException e) {
+        Throwable cur = e;
+        while (cur != null) {
+            String msg = cur.getMessage();
+            if (msg != null && msg.toLowerCase(Locale.ROOT).contains("unknown command 'config'")) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * When CONFIG is unavailable, probe the real database count with SELECT using an increasing
+     * step (0, 3, 7, 12, 18, ...): jump-probe until the first out-of-range database, then locate
+     * the exact boundary one by one between the last good point and the failure point.
+     */
+    public int probeDatabaseCount(Connection conn) {
+        if (!selectDatabase(conn, 0)) {
+            return 0;
+        }
+        int lastGood = 0;
+        int step = 3;
+        while (true) {
+            int candidate = lastGood + step;
+            if (candidate >= PROBE_LIMIT) {
+                break;
+            }
+            if (!selectDatabase(conn, candidate)) {
+                return refineDatabaseCount(conn, lastGood, candidate);
+            }
+            lastGood = candidate;
+            step++;
+        }
+        return lastGood + 1;
+    }
+
+    public int refineDatabaseCount(Connection conn, int lastGood, int failPoint) {
+        int count = lastGood + 1;
+        for (int i = lastGood + 1; i < failPoint; i++) {
+            if (selectDatabase(conn, i)) {
+                count = i + 1;
+            } else {
+                break;
+            }
+        }
+        return count;
+    }
+
+    private boolean selectDatabase(Connection conn, int db) {
+        try (PreparedStatement ps = conn.prepareStatement("select ?")) {
+            ps.setString(1, String.valueOf(db));
+            ps.execute();
+            return true;
+        } catch (SQLException e) {
+            // SELECT still works on managed services where CONFIG is disabled; a failure means
+            // the database is out of range.
+            log.warn("SELECT db {} failed during schema probe, treat as out of range: {}", db, e.getMessage());
+            return false;
         }
     }
 
