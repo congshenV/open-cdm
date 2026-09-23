@@ -31,7 +31,7 @@ pipeline {
 
     environment {
         BUILD_IMAGE  = 'cgdm-build-env:ci'
-        ACR          = 'rmain-registry.cn-beijing.cr.aliyuncs.com'   // TODO: your ACR endpoint
+        ACR          = 'maas-registry-vpc.cn-shanghai.cr.aliyuncs.com'
         NAMESPACE    = 'ack'                          // TODO: your ACR namespace
         SERVICES     = 'console sidecar'
         BUILD_ARCH   = 'x86_64'
