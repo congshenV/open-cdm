@@ -18,7 +18,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 22.22.1 exact version (matches frontend/AGENTS.md toolchain).
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-$(dpkg --print-architecture).tar.xz" \
+# Node 官方二进制用 x64/arm64 命名，而 dpkg --print-architecture 输出 amd64，需映射架构后再拼 URL。
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+         amd64) NODE_ARCH="x64" ;; \
+         arm64) NODE_ARCH="arm64" ;; \
+         *) NODE_ARCH="$ARCH" ;; \
+       esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
         -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm -f /tmp/node.tar.xz
