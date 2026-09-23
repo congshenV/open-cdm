@@ -38,7 +38,9 @@ docker exec -i "${CID}" bash -c 'mkdir -p /workspace && tar -xf - -C /workspace'
     < <(tar -C "${WORKSPACE}" -cf - .)
 
 # ACR auth in: copy, not mount (its host path is also unresolved under dind).
+# docker cp does not create parent directories, so mkdir /root/.docker first.
 if [ -f "${HOME}/.docker/config.json" ]; then
+    docker exec "${CID}" mkdir -p /root/.docker
     docker cp "${HOME}/.docker/config.json" "${CID}:/root/.docker/config.json"
 fi
 
