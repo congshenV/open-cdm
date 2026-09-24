@@ -71,13 +71,15 @@ public class RedisMetaProviderDm extends AbstractMetadataProvider implements Met
             try {
                 return querySchemasByConfig(conn);
             } catch (SQLException e) {
-                // Some managed cloud services disable the CONFIG command (typical error:
-                // "ERR unknown command 'CONFIG'..."). In that case fall back to probing the real
-                // database count with SELECT; permission and other errors are still rethrown.
-                if (!isConfigUnsupported(e)) {
+                // Some managed cloud services disable the CONFIG command entirely (typical
+                // error: "ERR unknown command 'CONFIG'..."), or block it via ACL (typical
+                // error: "NOPERM this user has no permissions to run the 'config|get' command").
+                // In both cases fall back to probing the real database count with SELECT;
+                // other errors are still rethrown.
+                if (!isConfigUnavailable(e)) {
                     throw e;
                 }
-                log.warn("CONFIG GET databases unsupported, fallback to SELECT probe.");
+                log.warn("CONFIG GET databases unavailable, fallback to SELECT probe.");
                 return RedisMetaProviderUtils.buildSchemaValues(probeDatabaseCount(conn));
             }
         }
@@ -90,15 +92,22 @@ public class RedisMetaProviderDm extends AbstractMetadataProvider implements Met
     }
 
     /**
-     * Whether CONFIG is disabled: the typical error message contains "unknown command 'CONFIG'".
-     * Permission and other errors do not match.
+     * Whether CONFIG is unavailable: command is disabled (typical error message contains
+     * "unknown command 'CONFIG'") or blocked by ACL (typical error message contains "NOPERM"
+     * and "config"). Other errors do not match.
      */
-    private boolean isConfigUnsupported(SQLException e) {
+    private boolean isConfigUnavailable(SQLException e) {
         Throwable cur = e;
         while (cur != null) {
             String msg = cur.getMessage();
-            if (msg != null && msg.toLowerCase(Locale.ROOT).contains("unknown command 'config'")) {
-                return true;
+            if (msg != null) {
+                String low = msg.toLowerCase(Locale.ROOT);
+                if (low.contains("unknown command 'config'")) {
+                    return true;
+                }
+                if (low.contains("noperm") && low.contains("config")) {
+                    return true;
+                }
             }
             cur = cur.getCause();
         }
