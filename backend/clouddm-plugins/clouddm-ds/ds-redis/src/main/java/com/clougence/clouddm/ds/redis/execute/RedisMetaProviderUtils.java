@@ -50,6 +50,17 @@ public class RedisMetaProviderUtils {
         return result;
     }
 
+    public static List<Value> buildSchemaValues(int databases) {
+        List<Value> result = new ArrayList<>();
+        for (int i = 0; i < databases; i++) {
+            RdbValue schema = new RdbValue();
+            schema.setValue(String.valueOf(i));
+            schema.setUmiType(UmiTypes.Schema);
+            result.add(schema);
+        }
+        return result;
+    }
+
     public static Properties convertServerInfo(ResultSet rs) throws SQLException {
         Properties result = new Properties();
         while (rs.next()) {
