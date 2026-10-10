@@ -44,6 +44,7 @@ import com.clougence.clouddm.api.sidecar.autoexec.AutoExecMessageDTO;
 import com.clougence.clouddm.api.sidecar.session.execute.AsyncWaitResult;
 import com.clougence.clouddm.base.metadata.ds.DataSourceConfig;
 import com.clougence.clouddm.comm.model.auth.WorkerIdentity;
+import com.clougence.clouddm.sdk.execute.dsconf.DsConfigOverrideUtils;
 import com.clougence.clouddm.sdk.execute.resultset.echo.Result;
 import com.clougence.clouddm.sdk.execute.resultset.echo.ResultCount;
 import com.clougence.clouddm.sdk.execute.resultset.echo.ResultMessage;
@@ -127,6 +128,8 @@ public class AutoExecJob implements Runnable {
             // create session
             try {
                 DataSourceConfig dsConfig = this.configRService.fetchDsConfig(this.job.getDsId());
+                // Ticket-executed SQL must run against the catalog/schema selected in the ticket, not the datasource defaults.
+                DsConfigOverrideUtils.applySessionContext(dsConfig, this.job.getContextDTO());
                 this.sessionAgent = this.sessionManager.createSession(backgroundRM, dsConfig, this.job.getContextDTO());
                 String currentQueryId = this.sessionAgent.getCurrentQueryId();
                 sendMessage(AutoExecMessageDTO.createQueryIdMessage(this.job.getJobId(), currentQueryId), true);
