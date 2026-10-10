@@ -230,6 +230,7 @@ public class QueryApprovalHandler implements ApprovalHandler {
 
         DmAuthUserDO userDO = this.authDal.userMapper().queryByUid(approvalDO.getOwnerUid());
         form.setTicketUserPhone(userDO.getPhone());
+        form.setTicketUserEmail(userDO.getEmail());
         form.setExecuteSql(this.approvalService.consumeSqlFile(approvalDO.getId(), sqlFile -> {
             String language = this.userConfigService.defaultLanguage();
             Locale locale = I18nUtils.getLocale(language);

@@ -23,6 +23,7 @@ import lombok.Setter;
 public abstract class ApprovalForm {
 
     private String ticketUserPhone;
+    private String ticketUserEmail;
     private String ticketTitle;
     private String ticketDesc;
 
