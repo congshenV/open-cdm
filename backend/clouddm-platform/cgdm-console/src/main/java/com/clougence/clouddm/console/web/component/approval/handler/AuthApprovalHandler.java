@@ -225,7 +225,6 @@ public class AuthApprovalHandler implements ApprovalHandler {
         form.setTicketDesc(ticketDO.getDescription());
         DmAuthUserDO userDO = this.authDal.userMapper().queryByUid(ticketDO.getOwnerUid());
         form.setTicketUserPhone(userDO.getPhone());
-        form.setTicketUserEmail(userDO.getEmail());
         form.setTemplateIdentity(ticketDO.getApproTemplateIdentity());
         return form;
     }
