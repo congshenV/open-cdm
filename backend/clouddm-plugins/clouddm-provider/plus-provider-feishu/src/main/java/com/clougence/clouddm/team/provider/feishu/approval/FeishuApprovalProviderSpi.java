@@ -140,7 +140,7 @@ public class FeishuApprovalProviderSpi implements ApprovalProviderSpi {
         FeishuApi approvalApi = this.approvalApi(ownerUid);
 
         FeishuTemplateInfo approvalActivities = approvalApi.getApprovalActivities(info.getTemplateIdentity());
-        String userIdByPhone = approvalApi.getUserIdByPhoneOrEmail(info.getTicketUserPhone(), info.getTicketUserEmail());
+        String userIdByPhone = approvalApi.getUserIdByPhone(info.getTicketUserPhone());
 
         String form = FeishuApiUtils.getFormParams(approvalActivities.getWidgets(), info);
         ApprovalCreateInstanceResult approvalCreateInstanceResult = new ApprovalCreateInstanceResult();
@@ -249,7 +249,7 @@ public class FeishuApprovalProviderSpi implements ApprovalProviderSpi {
     public void cancelApprovalInst(String ownerUid, ApprovalInstanceCancelInfo info) throws ThirdPartyApiException {
         FeishuApi approvalApi = this.approvalApi(ownerUid);
 
-        String userId = approvalApi.getUserIdByPhoneOrEmail(info.getTicketUserPhone(), info.getTicketUserEmail());
-        approvalApi.cancelInstance(info, userId);
+        String userIdByPhone = approvalApi.getUserIdByPhone(info.getTicketUserPhone());
+        approvalApi.cancelInstance(info, userIdByPhone);
     }
 }
