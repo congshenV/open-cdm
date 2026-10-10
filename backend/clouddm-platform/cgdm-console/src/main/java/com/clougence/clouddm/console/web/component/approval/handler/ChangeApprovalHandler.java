@@ -297,6 +297,7 @@ public class ChangeApprovalHandler implements ApprovalHandler {
 
         ChangeForm form = new ChangeForm();
         form.setTicketUserPhone(userDO.getPhone());
+        form.setTicketUserEmail(userDO.getEmail());
         form.setTicketDesc(ticketDO.getDescription());
         form.setTicketTitle(ticketDO.getTicketTitle());
         form.setTemplateIdentity(templateId);

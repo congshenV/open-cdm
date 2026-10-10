@@ -295,6 +295,7 @@ public class ApprovalProviderServiceImpl implements ApprovalRefreshService {
 
         ApprovalInstanceCancelInfo cancelInstanceInfo = new ApprovalInstanceCancelInfo();
         cancelInstanceInfo.setTicketUserPhone(ticketUser.getPhone());
+        cancelInstanceInfo.setTicketUserEmail(ticketUser.getEmail());
         cancelInstanceInfo.setApprovalInstanceIdentity(ticketDO.getApproIdentity());
         cancelInstanceInfo.setApprovalTemplateCode(ticketDO.getApproTemplateIdentity());
         if (StringUtils.isNotEmpty(ticketDO.getApproIdentity())) {

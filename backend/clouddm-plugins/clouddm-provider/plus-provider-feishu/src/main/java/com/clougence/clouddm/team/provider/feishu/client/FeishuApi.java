@@ -112,6 +112,37 @@ public class FeishuApi {
         });
     }
 
+    public String getUserIdByEmail(final String email) {
+        return this.client.callApi(client -> {
+            BatchGetIdUserReq req = BatchGetIdUserReq.newBuilder()
+                .userIdType(USER_ID_TYPE)
+                .batchGetIdUserReqBody(BatchGetIdUserReqBody.newBuilder().emails(new String[] { email }).includeResigned(true).build())
+                .build();
+
+            BatchGetIdUserResp resp = client.apiClient().contact().user().batchGetId(req);
+            checkSuccess(resp, "getUserIdByEmail", false);
+
+            UserContactInfo userContactInfo = resp.getData().getUserList()[0];
+            if (userContactInfo.getUserId() == null) {
+                throw ThirdPartyApiException.as().with(FeishuI18nKeys.FEISHU_NOT_FIND_USER_BY_EMAIL);
+            }
+            return userContactInfo.getUserId();
+        });
+    }
+
+    /**
+     * 手机号优先查询飞书用户 ID，手机号为空时降级使用邮箱；两者都为空时抛出异常。
+     */
+    public String getUserIdByPhoneOrEmail(final String phone, final String email) {
+        if (StringUtils.isNotBlank(phone)) {
+            return this.getUserIdByPhone(phone);
+        }
+        if (StringUtils.isNotBlank(email)) {
+            return this.getUserIdByEmail(email);
+        }
+        throw ThirdPartyApiException.as().with(FeishuI18nKeys.FEISHU_NOT_FIND_USER_BY_PHONE_OR_EMAIL);
+    }
+
     public FeishuTemplateInfo getApprovalActivities(final String identity) {
         return this.client.callApi(client -> {
             GetApprovalReq req = GetApprovalReq.newBuilder().approvalCode(identity).build();

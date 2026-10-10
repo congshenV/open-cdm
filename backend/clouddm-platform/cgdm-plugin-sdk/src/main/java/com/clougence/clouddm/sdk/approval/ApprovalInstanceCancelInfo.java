@@ -23,6 +23,7 @@ import lombok.Setter;
 public class ApprovalInstanceCancelInfo {
 
     private String ticketUserPhone;
+    private String ticketUserEmail;
     private String approvalInstanceIdentity;
     private String approvalTemplateCode;
 }
