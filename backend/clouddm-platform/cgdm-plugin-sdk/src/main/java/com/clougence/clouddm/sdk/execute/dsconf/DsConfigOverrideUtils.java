@@ -34,9 +34,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DsConfigOverrideUtils {
 
-    public static DataSourceConfig applySessionContext(DataSourceConfig dsConfig, SessionContextDTO contextDTO) {
+    public static void applySessionContext(DataSourceConfig dsConfig, SessionContextDTO contextDTO) {
         if (dsConfig == null || contextDTO == null) {
-            return dsConfig;
+            return;
         }
 
         Map<String, String> overrides = new HashMap<>();
@@ -47,11 +47,10 @@ public class DsConfigOverrideUtils {
             overrides.put(DsConfigField.DEFAULT_SCHEMA.getConfigName(), contextDTO.getRdbSchema());
         }
         if (overrides.isEmpty()) {
-            return dsConfig;
+            return;
         }
 
         applyConfigValues(dsConfig, dsConfig.getClass(), overrides);
-        return dsConfig;
     }
 
     private static void applyConfigValues(Object instance, Class<?> clazz, Map<String, String> overrides) {
