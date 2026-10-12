@@ -34,7 +34,7 @@
               <a-input class="field-input" v-model:value="loginForm.registerInfo.name" @keydown.enter="handleEnter" size="large" />
             </div>
             <div class="floating-field" :class="{ 'has-value': loginForm.registerInfo.phone }">
-              <span class="floating-label">{{ optionalLabel($t('shou-ji-hao')) }}</span>
+              <span class="floating-label">{{ $t('shou-ji-hao') }}</span>
               <a-input
                 class="field-input"
                 v-model:value="loginForm.registerInfo.phone"
@@ -352,6 +352,10 @@ export default {
       this.completionErrors[field] = '';
       this.completionValid[field] = false;
       if (!checkContent) {
+        if (field === 'phone') {
+          this.completionErrors.phone = this.$t('qing-shu-ru-shou-ji-hao');
+          return false;
+        }
         return true;
       }
       const primaryUid = registerInfo.primaryUid || this.loginCallbackData.primaryUid;
