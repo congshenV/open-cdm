@@ -1,6 +1,7 @@
 <template>
   <div class="sql-viewer">
     <operators
+      :inert="!monacoEditor"
       :tab="tab"
       :stopping="stopping"
       :handleRun="onRun"
@@ -18,25 +19,48 @@
         <slot name="connection-context" />
       </template>
     </operators>
-    <Editor
-      :set-editor-instance="setEditorInstance"
-      :current-tab="tab"
-      ref="editor"
-      :completion-data="completionData"
-      :store-query-tabs="storeQueryTabs"
-      :rdb-object-detail="rdbObjectDetail"
-      :on-run="onRun"
-      @change="handleEditorChange"
-    />
+    <div class="sql-editor-stage" :aria-busy="!monacoEditor">
+      <Editor
+        :inert="!monacoEditor"
+        :set-editor-instance="setEditorInstance"
+        :current-tab="tab"
+        ref="editor"
+        :completion-data="completionData"
+        :store-query-tabs="storeQueryTabs"
+        :rdb-object-detail="rdbObjectDetail"
+        :on-run="onRun"
+        @change="handleEditorChange"
+      >
+        <template #editor-controls>
+          <CommandExamples v-if="tab.support.commandExamples?.length" :key="tab.dsId" :examples="tab.support.commandExamples" />
+          <SqlScriptPopover
+            :tab="tab"
+            :get-editor-content="getEditorContent"
+            :store-query-tabs="storeQueryTabs"
+            @open-script="$emit('open-script', $event)"
+            @script-deleted="$emit('script-deleted', $event)"
+            @script-renamed="$emit('script-renamed', $event)"
+          />
+        </template>
+      </Editor>
+      <Transition name="sql-editor-loading">
+        <SqlLoadingSkeleton v-if="!monacoEditor" variant="editor" class="sql-editor-loading" />
+      </Transition>
+    </div>
     <div class="editor-resize" />
     <div :class="`query-message ${tab.message.type}`" v-if="tab.message.text && tab.message.show && tab.connected">
       <div v-html="tab.message.text"></div>
       <CustomIcon type="icon-v2-close2" @click="handleCloseError" hoverStyle />
     </div>
-    <div class="query-message Error" v-if="!tab.connected && tab.msgContent">
+    <div class="query-message" :class="tab.workspaceConnectionState === 'disconnected' ? 'Info' : 'Error'" v-if="!tab.connected && tab.msgContent">
       {{ tab.msgContent }}
-      <Button type="text" size="small" @click="handleClickDsStatusIcon">
-        {{ $t('zhong-xin-lian-jie') }}
+      <Button
+        v-if="!['connecting', 'reconnecting', 'disconnecting'].includes(tab.workspaceConnectionState)"
+        type="text"
+        size="small"
+        @click="handleClickDsStatusIcon"
+      >
+        {{ $t(tab.workspaceConnectionState === 'disconnected' ? 'sql-connection-open' : 'sql-connection-reconnect') }}
       </Button>
     </div>
     <CCModal v-model="showNoPassedRuleModal" :title="$t('gui-ze-xiao-yan-shi-bai')" :width="800">
@@ -69,6 +93,7 @@ import * as monaco from 'monaco-editor';
 import { mapGetters, mapMutations, mapState } from 'vuex';
 import Operators from '@/views/sql/components/Operators';
 import { chunk } from 'xe-utils';
+import { nanoid } from 'nanoid';
 import Editor from '@/components/editor';
 import browseMixin from '@/mixins/browseMixin';
 import { sendWebSocket } from '@/services/socket';
@@ -77,13 +102,20 @@ import { RULE_WARN_LEVEL, WS_REQ_QUERY_TYPE, WS_TYPE } from '@/utils';
 import { UPDATE_SOCKET_STATUS } from '@/store/mutationTypes';
 import { EVENT_BUS_NAME_LIST } from '@/utils/eventBusName';
 import formatError from '@/services/formatError';
+import SqlScriptPopover from '@/views/sql/components/SqlScriptPopover.vue';
+import CommandExamples from '@/views/sql/components/CommandExamples.vue';
+import SqlLoadingSkeleton from '@/views/sql/components/SqlLoadingSkeleton.vue';
 
 export default {
   name: 'SqlViewer',
   components: {
     Editor,
-    Operators
+    Operators,
+    SqlScriptPopover,
+    CommandExamples,
+    SqlLoadingSkeleton
   },
+  emits: ['open-script', 'script-deleted', 'script-renamed', 'workspace-connection-error', 'workspace-connection-success'],
   props: {
     handleClickDsStatusIcon: Function,
     handleGetDsSetting: Function,
@@ -181,6 +213,9 @@ export default {
     },
     //
     handleGetRecoveryStatus() {
+      if (!this.tab.connected || !this.tab.sessionId || !this.tab.node) {
+        return;
+      }
       sendWebSocket(
         {
           type: WS_TYPE.WS_REQ_QUERY,
@@ -308,6 +343,10 @@ export default {
       });
     },
     async onRun(type = 'run', asyncForm) {
+      if (!this.tab.connected || !this.tab.node || !this.tab.sessionId) {
+        this.$Message.warning(this.$t('lian-jie-yi-duan-kai'));
+        return;
+      }
       this.storeQueryTabs();
       const selection = this.monacoEditor.getSelection();
       const hasSelection =
@@ -349,6 +388,10 @@ export default {
       // this.analysisSplit(selectedSql);
     },
     async handleRun(selectedSql, position, force = false) {
+      if (!this.tab.connected || !this.tab.sessionId) {
+        this.$Message.warning(this.$t('sql-connection-disconnected'));
+        return;
+      }
       this.tab.running = true;
       this.tab.result.active = 'message';
       this.tab.currentQueryType = 'query';
@@ -356,6 +399,7 @@ export default {
         type: WS_TYPE.WS_REQ_QUERY,
         object: {
           force,
+          requestId: nanoid(),
           basicCodeLine: Math.min(position.selectionStartLineNumber, position.positionLineNumber),
           basicCodeColumn: Math.min(position.selectionStartColumn, position.positionColumn),
           queryString: selectedSql,
@@ -401,6 +445,7 @@ export default {
         type: WS_TYPE.WS_REQ_QUERY,
         object: {
           force,
+          requestId: nanoid(),
           basicCodeLine: Math.min(position.selectionStartLineNumber, position.positionLineNumber),
           basicCodeColumn: Math.min(position.selectionStartColumn, position.positionColumn),
           sessionId: this.tab.sessionId,
@@ -443,6 +488,10 @@ export default {
       this.$refs.editor.formatSql();
     },
     handleInterceptor(confName, callback, focus = false, silence = false) {
+      if (!this.tab.connected || !this.tab.sessionId) {
+        this.$Message.warning(this.$t('sql-connection-disconnected'));
+        return;
+      }
       if (this.tab.support[confName].conf === 'No') {
         this.$Message.error({
           background: true,
@@ -475,7 +524,15 @@ export default {
       this.monacoEditor = editor;
     },
     handleEditorChange(value) {
-      this.tab.text = value;
+      let content = value;
+      if (typeof content !== 'string') content = this.monacoEditor?.getValue() || '';
+      this.tab.text = content;
+      if (this.tab.scriptId) {
+        this.tab.isEditing = content !== this.tab.scriptSavedText;
+      }
+    },
+    getEditorContent() {
+      return this.monacoEditor?.getValue() || '';
     },
     setSql(sql) {
       appLogger.debug('setSql', sql);
@@ -570,6 +627,8 @@ export default {
           metaData.receiveMode = receiveMode;
           // Save query type (plan query or normal query).
           metaData.queryType = currentTab.currentQueryType || 'query';
+          metaData.fetchCount = 0;
+          metaData.cost = { ...currentTab.cost };
 
           // Initialize the result set object before data is available.
           const len = currentTab.result.list.length;
@@ -592,7 +651,6 @@ export default {
             metaData.page = 1;
             metaData.size = 30; // PAGINATED mode is fixed to 30
             metaData.total = 0; // Initially 0, updated by ResultSetRows
-            metaData.fetchCount = 0; // Total rows retrieved
             metaData.data = null;
             metaData.dataArr = []; // Store loaded page data
             metaData.showData = [];
@@ -603,7 +661,6 @@ export default {
             metaData.page = 1;
             metaData.size = 30;
             metaData.total = 0;
-            metaData.fetchCount = 0; // Total number of rows retrieved, updated from resultSet fetchCount
             metaData.data = null;
             metaData.dataArr = [];
             metaData.showData = [];
@@ -624,28 +681,39 @@ export default {
           currentTab.result.list.push(metaData);
           currentTab.result.active = metaData.resultId;
         }
-        // Update the number of retrieved rows from ResultSetRows in PAGINATED mode.
+        // Progress updates carry the fetched count independently of the receive mode.
         if (queryData.object.resultType === 'ResultSetRows') {
           const { resultId, fetchCount } = queryData.object;
           const existingResult = currentTab.result.list.find((item) => item.resultId == resultId);
-          if (existingResult && existingResult.receiveMode === 'PAGINATED') {
+          if (existingResult) {
             existingResult.fetchCount = fetchCount || 0;
-            existingResult.total = fetchCount || 0;
+            if (existingResult.receiveMode === 'PAGINATED') {
+              existingResult.total = fetchCount || 0;
+            }
           }
         }
 
         // Process ResultSet, which contains row data.
         if (queryData.object.resultType === 'ResultSet') {
-          const { rowSet, resultId } = queryData.object;
+          const { rowSet, resultId, fetchCount } = queryData.object;
+          const existingResult = currentTab.result.list.find((item) => item.resultId == resultId);
+          if (!existingResult) {
+            return;
+          }
+          const { columnList, receiveMode } = existingResult;
+          // Empty result batches may still carry the final count.
+          if (fetchCount !== undefined) {
+            existingResult.fetchCount = fetchCount;
+            if (receiveMode === 'PAGINATED' || receiveMode === 'STREAM') {
+              existingResult.total = fetchCount;
+            }
+          }
 
           // Temporary compatibility: do not process this ResultSet if rowSet is empty.
           if (!rowSet || rowSet.length === 0) {
             return;
           }
 
-          // Find the corresponding result set by resultId; it should have been created from ResultSetMeta.
-          const existingResult = currentTab.result.list.find((item) => item.resultId == resultId);
-          const { columnList, receiveMode } = existingResult;
           const list = [];
 
           if (rowSet && columnList) {
@@ -667,19 +735,18 @@ export default {
           // Process data according to pagination mode.
           if (receiveMode === 'PAGINATED') {
             // Backend pagination mode: process only first-page data.
-            existingResult.showData = list;
             existingResult.pageCache[1] = list; // Cache the first page
-            existingResult.page = 1;
+            if (!existingResult.refreshOnProgress) {
+              existingResult.page = 1;
+            }
+            if (existingResult.page === 1) {
+              existingResult.showData = list;
+            }
             // Save original rowSet data for moreSize and other metadata.
             if (!existingResult.rowSetCache) {
               existingResult.rowSetCache = {};
             }
             existingResult.rowSetCache[1] = rowSet; // Save raw data on the first page
-            // Single-page results only emit ResultSet (not ResultSetRows); sync fetchCount here.
-            if (queryData.object.fetchCount !== undefined) {
-              existingResult.fetchCount = queryData.object.fetchCount;
-              existingResult.total = queryData.object.fetchCount;
-            }
           } else if (receiveMode === 'STREAM') {
             // STREAM mode: data continues to accumulate, showing only the latest 30 rows.
             existingResult.streamData = existingResult.streamData || [];
@@ -695,19 +762,12 @@ export default {
             }
             existingResult.rowSetStream.push(...rowSet);
 
-            // Update fetchCount and total from resultSet.
-            if (queryData.object.fetchCount !== undefined) {
-              existingResult.fetchCount = queryData.object.fetchCount;
-              existingResult.total = queryData.object.fetchCount;
-            }
-
             // Keep only the latest 30 rows for display.
             const displayCount = 30;
             if (existingResult.streamData.length > displayCount) {
               existingResult.showData = existingResult.streamData.slice(-displayCount);
               // Keep the corresponding raw data index.
-              const startIndex = existingResult.streamData.length - displayCount;
-              existingResult.rowSetStream = existingResult.rowSetStream.slice(startIndex);
+              existingResult.rowSetStream = existingResult.rowSetStream.slice(-displayCount);
             } else {
               existingResult.showData = existingResult.streamData;
             }
@@ -749,6 +809,7 @@ export default {
               currentTab.msgContent = entity.message;
               currentTab.msgFromWs = true;
               currentTab.connected = false;
+              this.$emit('workspace-connection-error', currentTab);
             }
 
             if (entity.mode === 'Hint') {
@@ -793,6 +854,19 @@ export default {
 
         if (queryData.object.resultType === 'Cost') {
           currentTab.cost = queryData.object;
+          let prepareText = this.$t('sql-prepare');
+          if (queryData.object.preCost !== -1) {
+            prepareText = this.$t('sql-prepare-cost', { cost: queryData.object.preCost });
+          }
+          let executeText = this.$t('sql-execute');
+          if (queryData.object.queryCost !== -1) {
+            executeText = this.$t('sql-execute-cost', { cost: queryData.object.queryCost });
+          }
+          let receiveText = this.$t('sql-receive');
+          if (queryData.object.rcvCost !== -1) {
+            receiveText = this.$t('sql-receive-cost', { cost: queryData.object.rcvCost });
+          }
+
           let popIndex = -1;
           let popList = [];
           switch (queryData.object.step) {
@@ -824,7 +898,7 @@ export default {
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: `准备查询，耗时${queryData.object.preCost}毫秒`,
+                  text: this.$t('sql-prepare-cost', { cost: queryData.object.preCost }),
                   color: 'green'
                 },
                 {
@@ -847,13 +921,13 @@ export default {
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: queryData.object.preCost === -1 ? '准备查询' : `准备查询，耗时${queryData.object.preCost}毫秒`,
+                  text: prepareText,
                   color: 'green'
                 },
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: queryData.object.queryCost === -1 ? '执行查询' : `执行查询，耗时${queryData.object.queryCost}毫秒`,
+                  text: executeText,
                   color: 'green'
                 },
                 {
@@ -869,19 +943,19 @@ export default {
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: queryData.object.preCost === -1 ? '准备查询' : `准备查询，耗时${queryData.object.preCost}毫秒`,
+                  text: prepareText,
                   color: 'green'
                 },
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: queryData.object.queryCost === -1 ? '执行查询' : `执行查询，耗时${queryData.object.queryCost}毫秒`,
+                  text: executeText,
                   color: 'green'
                 },
                 {
                   icon: 'check-circle',
                   theme: 'filled',
-                  text: queryData.object.rcvCost === -1 ? '接收结果' : `接收结果，耗时${queryData.object.rcvCost}毫秒`,
+                  text: receiveText,
                   color: 'green'
                 }
               ];
@@ -892,6 +966,11 @@ export default {
           }
           currentTab.cost.popIndex = popIndex;
           currentTab.cost.popList = popList;
+          currentTab.result.list.forEach((result) => {
+            if (queryData.object.requestId && result.requestId === queryData.object.requestId) {
+              result.cost = { ...currentTab.cost };
+            }
+          });
         }
 
         if (queryData.object.resultType === 'ClearHintMessage') {
@@ -907,6 +986,7 @@ export default {
 
         // Export information may come from ResultSetMeta or ResultSet, so process it centrally.
         if (queryData.object.resultType === 'ResultSetMeta' || queryData.object.resultType === 'ResultSet') {
+          this.$emit('workspace-connection-success', currentTab);
           const resultData =
             queryData.object.resultType === 'ResultSetMeta'
               ? queryData.object
@@ -939,6 +1019,25 @@ export default {
 </script>
 <style lang="less">
 .sql-viewer {
+  .sql-editor-stage {
+    position: relative;
+  }
+  .sql-editor-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+  }
+  .sql-editor-loading-leave-active {
+    transition: opacity 0.16s ease-out;
+  }
+  .sql-editor-loading-leave-to {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sql-editor-loading-leave-active {
+      transition: none;
+    }
+  }
   position: relative;
 
   .editor-resize {
