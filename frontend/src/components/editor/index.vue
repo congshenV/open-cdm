@@ -54,6 +54,8 @@ export default {
         tabSize: 4,
         lineNumbersMinChars: 3,
         scrollBeyondLastLine: false,
+        hideCursorInOverviewRuler: true,
+        overviewRulerBorder: false,
         theme: 'vs', // Editor theme: vs, hc-black, or vs-dark; more options in the official docs.
         minimap: {
           enabled: false
@@ -70,6 +72,7 @@ export default {
       hoverProviderList: [],
       fontSizePanelExpanded: false,
       languageRequestVersion: 0,
+      editorInitVersion: 0,
       validateTimer: null,
       splitTimer: null,
       editorDisposableList: [],
@@ -108,14 +111,21 @@ export default {
       }
     },
     async init() {
-      this.currentTab.language = await resolveSqlEditorLanguage(
+      const version = ++this.editorInitVersion;
+      const tab = this.currentTab;
+      const language = await resolveSqlEditorLanguage(
         monaco,
         this.currentTab.dsType,
         this.getDsSettings(),
         getLanguage(this.currentTab.dsType),
         this.getDsLanguageCapability()
       );
-      this.defaultOpts.language = this.currentTab.language;
+      if (version !== this.editorInitVersion || this.currentTab.key !== tab.key) {
+        return;
+      }
+      tab.language = language;
+      this.defaultOpts.language = language;
+      this.defaultOpts.quickSuggestions = { other: true, comments: false, strings: language === 'es' };
       let editorText = this.currentTab.text;
       if (typeof editorText !== 'string') {
         editorText = '';
@@ -132,7 +142,7 @@ export default {
       this.registerHover(this.defaultOpts.language);
       this.addActions();
       this.installSuggestIconRenderer();
-      this.setEditorInstance(this.monacoEditor);
+      this.setEditorInstance(this.monacoEditor, tab.key);
       this.installCurrentStatementOverlay();
       this.editorDisposableList.push(
         this.monacoEditor.onDidScrollChange(() => {
@@ -425,8 +435,11 @@ export default {
     },
     registerCompletion(lang) {
       const providerItem = monaco.languages.registerCompletionItemProvider(lang, {
-        triggerCharacters: [' ', '.', '`', '/', '$'],
+        triggerCharacters: [' ', '.', '`', '/', '$', '"', '?', '&'],
         provideCompletionItems: async (model, position) => {
+          if (model !== this.monacoEditor?.getModel()) {
+            return { suggestions: [] };
+          }
           this.sortText = 0;
           let suggestions = [];
 
@@ -667,7 +680,7 @@ export default {
       if (model.getVersionId() === this.splitModelVersionId) {
         statement = this.findStatementAtPosition(position, model);
       }
-      if (!statement && !this.isHana()) {
+      if (!statement && !this.isHana() && this.currentTab?.dsType !== 'ElasticSearch') {
         statement = this.findLocalStatementAtPosition(position, model);
       }
       if (!statement) {
@@ -996,7 +1009,7 @@ export default {
       );
     },
     findSqlFragmentRanges(text) {
-      if (this.isHana()) {
+      if (this.isHana() || this.currentTab?.dsType === 'ElasticSearch') {
         return [{ startOffset: 0, endOffset: text.length }];
       }
       const ranges = [];
@@ -1169,11 +1182,26 @@ export default {
     },
     async getDelayedBackendCompletionSuggest(model, position) {
       const versionId = model.getVersionId();
+      const sessionId = this.currentTab.sessionId;
       await this.waitForLanguageCompletion();
-      if (model.isDisposed() || model.getVersionId() !== versionId) {
+      if (
+        model.isDisposed() ||
+        model !== this.monacoEditor?.getModel() ||
+        model.getVersionId() !== versionId ||
+        this.currentTab.sessionId !== sessionId
+      ) {
         return [];
       }
-      return this.getBackendCompletionSuggest(position);
+      const suggestions = await this.getBackendCompletionSuggest(position);
+      if (
+        model.isDisposed() ||
+        model !== this.monacoEditor?.getModel() ||
+        model.getVersionId() !== versionId ||
+        this.currentTab.sessionId !== sessionId
+      ) {
+        return [];
+      }
+      return suggestions;
     },
     waitForLanguageCompletion() {
       return new Promise((resolve) => {
@@ -1224,7 +1252,15 @@ export default {
         insertText: item.insertText || item.label,
         umiType: item.umiType,
         icon: item.icon,
-        weight: item.weight
+        weight: item.weight,
+        range: item.range
+          ? new monaco.Range(
+              item.range.startPosition.lineNumber,
+              item.range.startPosition.columnNumber + 1,
+              item.range.endPosition.lineNumber,
+              item.range.endPosition.columnNumber + 1
+            )
+          : undefined
       };
     },
     mergeCompletionSuggestions(staticSuggestions, backendSuggestions) {
@@ -1243,7 +1279,7 @@ export default {
     },
     completionSuggestionKey(item) {
       const label = this.getCompletionLabelText(item.label);
-      if (this.isHana()) {
+      if (this.isHana() || this.getCurrentDsSetting()?.constant?.caseType === 'Sensitive') {
         return `${item.kind || ''}:${label}`;
       }
       return `${item.kind || ''}:${label.toUpperCase()}`;
@@ -1366,7 +1402,7 @@ export default {
       });
       this.hoverProviderList.push(providerItem);
     },
-    formatSql() {
+    async formatSql() {
       if (!canFormatSql(this.currentTab)) {
         this.showLanguageServiceError(this.$t('sql-format-unavailable'));
         return;
@@ -1378,12 +1414,51 @@ export default {
       }
       // Format the full document so selections inside literals/comments cannot change their contents.
       const range = model.getFullModelRange();
-      const formatted = formatSqlDocument(model.getValue(), this.currentTab.dsType);
-      if (formatted === null) {
+      const versionId = model.getVersionId();
+      const sessionId = this.currentTab.sessionId;
+      let formatted;
+      if (this.isDsLanguageSupport('FORMAT')) {
+        const sqlText = model.getValue();
+        if (this.isLanguageFragmentTooLarge(sqlText)) {
+          this.showLanguageServiceError(this.$t('query-format-too-large'));
+          return;
+        }
+        const request = this.buildLanguageRequest(null, { sqlText, startOffset: 0, startPosition: { lineNumber: 1, columnNumber: 0 } });
+        try {
+          const response = await this.requestLanguageWebSocket('FORMAT', request);
+          if (
+            model.isDisposed() ||
+            model !== this.monacoEditor?.getModel() ||
+            model.getVersionId() !== versionId ||
+            this.currentTab.sessionId !== sessionId
+          ) {
+            return;
+          }
+          if (this.handleLanguageServiceStatus(response) || this.handleLanguageServiceMessage(response)) {
+            return;
+          }
+          if (response?.result?.requestVersion !== request.requestVersion) {
+            return;
+          }
+          if (response.result.message) {
+            this.showLanguageServiceError(response.result.message);
+            return;
+          }
+          formatted = response.result.sqlText;
+        } catch {
+          this.showLanguageServiceError(this.$t('sql-format-failed'));
+          return;
+        }
+      } else {
+        formatted = formatSqlDocument(model.getValue(), this.currentTab.dsType);
+      }
+      if (typeof formatted !== 'string') {
         this.showLanguageServiceError(this.$t('sql-format-failed'));
         return;
       }
-      if (formatted === model.getValue()) return;
+      if (formatted === model.getValue()) {
+        return;
+      }
       editor.pushUndoStop();
       editor.executeEdits('sql-format', [{ range, text: formatted, forceMoveMarkers: true }]);
       editor.pushUndoStop();
@@ -1405,7 +1480,7 @@ export default {
         };
       }
 
-      if (this.isHana()) {
+      if (this.isHana() || this.currentTab?.dsType === 'ElasticSearch') {
         return { sql: '', position: null };
       }
       if (!position) {
@@ -1580,6 +1655,7 @@ export default {
     }
   },
   beforeUnmount() {
+    this.editorInitVersion++;
     document.removeEventListener('click', this.handleFontSizeOutsideClick);
     this.handleDispose();
   },
