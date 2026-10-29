@@ -64,6 +64,24 @@ const routes = [
         component: () => import(/* webpackChunkName: "sql" */ '@/views/sql/index')
       },
       {
+        // 运维控制台是独立区域，自带侧边栏与内容区，不参与主站菜单
+        path: 'dmops',
+        component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/index'),
+        redirect: '/dmops/instance',
+        children: [
+          {
+            path: 'instance',
+            name: 'DmOpsInstance',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/InstanceList')
+          },
+          {
+            path: 'config',
+            name: 'DmOpsConfig',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/ConfigManage')
+          }
+        ]
+      },
+      {
         path: 'cicd',
         name: 'CICD',
         component: () => import(/* webpackChunkName: "cicd" */ '@/views/cicd/index')

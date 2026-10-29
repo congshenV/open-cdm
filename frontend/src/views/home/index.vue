@@ -4,13 +4,21 @@
 
     <template v-if="showChild">
       <Transition name="layout-switch" mode="out-in">
-        <div v-if="isSqlRoute" key="sql" class="sql-layout">
+        <!-- 运维控制台自带完整布局（侧边栏 + 内容区），这里只留挂载点 -->
+        <div v-if="isDmOpsRoute" key="dmops" class="dmops-layout">
+          <router-view />
+        </div>
+        <div v-else-if="isSqlRoute" key="sql" class="sql-layout">
           <header class="sql-compact-header">
             <div class="sql-compact-header__brand" @click="handleGoAppHome">
               <AppBrandLogo />
               <span class="sql-compact-header__title">{{ $t('sql-cha-xun') }}</span>
             </div>
             <div class="sql-compact-header__actions">
+              <router-link to="/dmops" class="sql-compact-header__back" :title="$t('yun-wei-kong-zhi-tai')">
+                <CustomIcon type="icon-v2-cluster" size="14px" />
+                <span>{{ $t('yun-wei-kong-zhi-tai') }}</span>
+              </router-link>
               <button type="button" class="sql-compact-header__back" @click="handleGoAppHome">
                 <span>{{ $t('fan-hui-gong-zuo-tai') }}</span>
               </button>
@@ -177,6 +185,9 @@ export default {
     },
     isSqlRoute() {
       return this.$route.path === '/sql' || this.$route.path.startsWith('/sql/');
+    },
+    isDmOpsRoute() {
+      return this.$route.path === '/dmops' || this.$route.path.startsWith('/dmops/');
     }
   },
   async created() {

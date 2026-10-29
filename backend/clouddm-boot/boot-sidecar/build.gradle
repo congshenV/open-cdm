@@ -15,6 +15,20 @@
  */
 plugins {
     id 'com.clougence.java-conventions'
+    id 'application'
+}
+
+application {
+    mainClass = 'com.clougence.clouddm.boot.DmWorkerLauncher'
+}
+
+tasks.named('run', JavaExec) {
+    description = 'Run DmWorkerLauncher for development'
+    group = 'application'
+
+    jvmArgs '-Xms256m', '-Xmx1024m', '-Djava.awt.headless=true'
+    workingDir = rootProject.projectDir
+    systemProperties = System.properties
 }
 
 dependencies {

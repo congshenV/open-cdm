@@ -55,3 +55,18 @@ install_upgrade.log
 .claude
 .design_docs
 .workbuddy
+
+# Gradle runtime (stale redirected user home)
+/backend/caches/
+/backend/wrapper/
+/backend/daemon/
+/backend/native/
+/backend/.tmp/
+
+# Eclipse/Buildship output (VS Code Java extension)
+backend/**/bin/
+/frontend/bin/
+/tests/**/bin/
+
+# local tool state
+/.lithe/

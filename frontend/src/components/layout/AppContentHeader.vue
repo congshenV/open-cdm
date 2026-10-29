@@ -28,6 +28,10 @@
       </h1>
     </div>
     <div class="app-content-header__right">
+      <router-link to="/dmops" class="app-content-header__link" :title="$t('yun-wei-kong-zhi-tai')">
+        <CustomIcon type="icon-v2-cluster" size="14px" />
+        <span>{{ $t('yun-wei-kong-zhi-tai') }}</span>
+      </router-link>
       <a v-if="showSqlLink" href="/#/sql" class="app-content-header__link" @click.prevent="handleGoSql">
         <CustomIcon type="icon-v2-SqlLog" size="14px" />
         <span>{{ $t('sql-cha-xun') }}</span>
@@ -404,44 +408,3 @@ export default {
   }
 };
 </script>
-
-<style lang="less" scoped>
-.app-content-header__title {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.app-content-header__crumb {
-  color: #4b5563;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 24px;
-  text-decoration: none;
-  transition: color 0.18s ease;
-
-  &:hover {
-    color: #0fac69;
-  }
-
-  &.is-current {
-    color: #1f2937;
-  }
-}
-
-.app-content-header__crumb-button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  appearance: none;
-}
-
-.app-content-header__separator {
-  color: #6b7280;
-  font-weight: 600;
-}
-</style>
