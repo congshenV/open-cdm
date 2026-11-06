@@ -71,6 +71,13 @@ public class DmOpsProxyController {
     private static final Set<String> HOP_BY_HOP = new HashSet<>(
         Arrays.asList("connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"));
 
+    /**
+     * OkHttp refuses POST/PUT/PATCH without a RequestBody, even when the caller sent an empty body
+     * (the dmops sync endpoint is exactly that: POST with Content-Length: 0). Give them an explicit
+     * empty body instead of null.
+     */
+    private static final Set<String> BODY_REQUIRED_METHODS = new HashSet<>(Arrays.asList("POST", "PUT", "PATCH", "PROPPATCH", "REPORT"));
+
     @Resource
     private DmOpsProxyConfig         config;
     @Resource
@@ -178,7 +185,7 @@ public class DmOpsProxyController {
         RequestBody body = null;
         if (!StringUtils.equalsIgnoreCase(method, "GET") && !StringUtils.equalsIgnoreCase(method, "HEAD")) {
             byte[] bytes = IOUtils.toByteArray(request.getInputStream());
-            if (bytes.length > 0) {
+            if (bytes.length > 0 || BODY_REQUIRED_METHODS.contains(method.toUpperCase())) {
                 String contentType = request.getContentType();
                 MediaType mediaType = contentType == null ? null : MediaType.parse(contentType);
                 body = RequestBody.create(bytes, mediaType);

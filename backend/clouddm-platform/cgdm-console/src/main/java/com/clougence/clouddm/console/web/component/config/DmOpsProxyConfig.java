@@ -48,7 +48,8 @@ public class DmOpsProxyConfig {
     private String       baseUrl;
     @Value("${dmops.proxy.connect-timeout-ms:3000}")
     private int          connectTimeoutMs;
-    @Value("${dmops.proxy.read-timeout-ms:60000}")
+    /** instance sync fans out over all regions, it needs the same 180s budget as the frontend and gunicorn. */
+    @Value("${dmops.proxy.read-timeout-ms:180000}")
     private int          readTimeoutMs;
     /** shared secret used to sign the forwarded user identity. */
     @Value("${dmops.proxy.identity.secret:}")

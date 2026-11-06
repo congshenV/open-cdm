@@ -75,6 +75,26 @@ const routes = [
             component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/InstanceList')
           },
           {
+            path: 'instance/:instanceId',
+            name: 'DmOpsInstanceDetail',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/InstanceDetail')
+          },
+          {
+            path: 'drill',
+            name: 'DmOpsDrillList',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/DrillList')
+          },
+          {
+            path: 'drill/:drillId',
+            name: 'DmOpsDrillDetail',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/DrillDetail')
+          },
+          {
+            path: 'accounts',
+            name: 'DmOpsAccount',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/AccountList')
+          },
+          {
             path: 'config',
             name: 'DmOpsConfig',
             component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/ConfigManage')

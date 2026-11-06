@@ -50,7 +50,7 @@ png_tar() { echo "$PACKAGE_DIR/build/docker-${1}-${2}-${3}.tar"; }
 has_platform_built() {
   local plat="$1" ver="$2"
   local svc
-  for svc in console sidecar alone; do
+  for svc in console sidecar alone dmops; do
     local t; t="$(png_tar "$svc" "$plat" "$ver")"
     [ -f "$t" ] && [ -s "$t" ] || return 1
   done

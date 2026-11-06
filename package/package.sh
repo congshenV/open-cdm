@@ -46,7 +46,7 @@ Options:
 
 Common commands:
   ./package.sh --build
-      Compile and create console, sidecar and alone tgz packages.
+      Compile and create console, sidecar, alone and dmops tgz packages.
 
   ./package.sh --docker
       Build Docker images for all platforms from existing tgz packages.
@@ -71,6 +71,7 @@ Generated artifacts:
       clouddm-console-<version>.tar.gz
       clouddm-sidecar-<version>.tar.gz
       clouddm-alone-<version>.tar.gz
+      clouddm-dmops-<version>.tar.gz
 
 Docker build prerequisites:
   Run ./package.sh --build first, unless package/build already contains tgz artifacts.
@@ -120,6 +121,23 @@ if [ "$DO_BUILD" -eq 1 ]; then
   find "$SCRIPT_DIR/pkg/console/build/dist" -maxdepth 1 -type f ! -name '.DS_Store' -exec cp {} "$PACKAGE_BUILD_DIR/" \;
   find "$SCRIPT_DIR/pkg/sidecar/build/dist" -maxdepth 1 -type f ! -name '.DS_Store' -exec cp {} "$PACKAGE_BUILD_DIR/" \;
   find "$SCRIPT_DIR/pkg/alone/build/dist" -maxdepth 1 -type f ! -name '.DS_Store' -exec cp {} "$PACKAGE_BUILD_DIR/" \;
+
+  # dmops has no Gradle artifact, so the Python source tree is shipped as-is.
+  # The archive root is dmops/, dmops.Dockerfile extracts it into /app.
+  DMOPS_STAGE="$PACKAGE_BUILD_DIR/.dmops-stage"
+  rm -rf "$DMOPS_STAGE"
+  mkdir -p "$DMOPS_STAGE/dmops"
+  (
+    cd "$REPO_ROOT/dmops"
+    find . -type d \( -name .venv -o -name __pycache__ -o -name .git -o -name .pytest_cache -o -name .ruff_cache \) -prune \
+      -o -type f ! -name '.env' ! -name '*.pyc' -print0 |
+      while IFS= read -r -d '' file; do
+        mkdir -p "$DMOPS_STAGE/dmops/$(dirname "$file")"
+        cp -p "$file" "$DMOPS_STAGE/dmops/$file"
+      done
+  )
+  tar -czf "$PACKAGE_BUILD_DIR/cgdm-dmops.tar.gz" -C "$DMOPS_STAGE" dmops
+  rm -rf "$DMOPS_STAGE"
 
   echo "[BUILD] done. version=${VERSION}"
 fi

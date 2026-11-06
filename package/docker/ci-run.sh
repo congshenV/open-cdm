@@ -9,7 +9,7 @@ set -euo pipefail
 BUILD_ARCH="${BUILD_ARCH:-x86_64}"
 ACR="${ACR:-}"
 NAMESPACE="${NAMESPACE:-}"
-SERVICES="${SERVICES:-console sidecar}"
+SERVICES="${SERVICES:-console sidecar dmops}"
 
 : "${BUILD_VERSION:?BUILD_VERSION is required}"
 : "${IMAGE_TAG:?IMAGE_TAG is required}"

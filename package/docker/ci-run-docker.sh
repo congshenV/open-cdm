@@ -53,6 +53,6 @@ docker exec \
     -e "IMAGE_TAG=${IMAGE_TAG}" \
     -e "ACR=${ACR}" \
     -e "NAMESPACE=${NAMESPACE}" \
-    -e "SERVICES=${SERVICES:-console sidecar}" \
+    -e "SERVICES=${SERVICES:-console sidecar dmops}" \
     "${CID}" \
     bash /workspace/package/docker/ci-run.sh

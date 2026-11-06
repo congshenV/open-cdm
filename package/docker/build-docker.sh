@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGE_BUILD_DIR="$PACKAGE_DIR/build"
-SERVICES=(console sidecar alone)
+SERVICES=(console sidecar alone dmops)
 
 case "${1:-}" in
   -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
@@ -77,7 +77,11 @@ stage_build_contexts() {
     local service_ctx="$root_ctx/$svc"
     mkdir -p "$service_ctx"
     cp "$PACKAGE_BUILD_DIR/cgdm-${svc}.tar.gz" "$service_ctx/"
-    cp -r "$SCRIPT_DIR/shared" "$service_ctx/shared"
+    # only the service's own shared files belong in its build context
+    if [ -d "$SCRIPT_DIR/shared/$svc" ]; then
+      mkdir -p "$service_ctx/shared"
+      cp -r "$SCRIPT_DIR/shared/$svc" "$service_ctx/shared/$svc"
+    fi
   done
 }
 

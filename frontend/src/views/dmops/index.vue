@@ -3,7 +3,8 @@
     运维控制台外壳。
 
     整体结构照搬控制台（app-layout：左侧栏 + 卡片内容区），只是：
-      - 侧边栏换成 dmops 自己的菜单（实例列表 / 配置管理）
+      - 侧边栏换成 dmops 自己的菜单，和控制台一样用分隔线分成上下两组：
+        上组是日常运维入口（实例列表），下组是管理入口（账号管理 / 配置管理）
       - 内容区由 dmops 的子路由渲染
     与 CloudDM 主站不共用 store 与菜单，后续整体替换 dmops 前端时只动这一个目录。
   -->
@@ -16,7 +17,24 @@
       <nav class="app-sidebar-nav">
         <div class="app-sidebar-section">
           <router-link
-            v-for="item in navItems"
+            v-for="item in primaryNavItems"
+            :key="item.key"
+            :to="item.to"
+            :aria-label="item.label"
+            :title="item.label"
+            class="app-sidebar-item"
+            :class="{ 'is-active': activeKey === item.key }"
+          >
+            <CustomIcon :type="item.icon" size="16px" />
+            <span>{{ item.label }}</span>
+          </router-link>
+        </div>
+
+        <div class="app-sidebar-divider" />
+
+        <div class="app-sidebar-section">
+          <router-link
+            v-for="item in secondaryNavItems"
             :key="item.key"
             :to="item.to"
             :aria-label="item.label"
@@ -72,15 +90,26 @@ export default {
     ...mapState(['mySystemMenuItems', 'userInfo']),
     navItems() {
       return [
-        { key: 'instance', to: '/dmops/instance', icon: 'icon-v2-DataBase2', label: this.$t('shi-li-lie-biao') },
-        { key: 'config', to: '/dmops/config', icon: 'icon-v2-DSENV', label: this.$t('pei-zhi-guan-li') }
+        { key: 'instance', to: '/dmops/instance', icon: 'icon-v2-DataBase2', label: this.$t('shi-li-lie-biao'), section: 'primary' },
+        { key: 'drill', to: '/dmops/drill', icon: 'icon-v2-Refresh', label: this.$t('yan-lian-lie-biao'), section: 'primary' },
+        { key: 'account', to: '/dmops/accounts', icon: 'icon-v2-user', label: this.$t('zhang-hao-guan-li'), section: 'secondary' },
+        { key: 'config', to: '/dmops/config', icon: 'icon-v2-DSENV', label: this.$t('pei-zhi-guan-li'), section: 'secondary' }
       ];
+    },
+    primaryNavItems() {
+      return this.navItems.filter((item) => item.section === 'primary');
+    },
+    secondaryNavItems() {
+      return this.navItems.filter((item) => item.section === 'secondary');
     },
     activeKey() {
       const matched = this.navItems.find((item) => this.$route.path.startsWith(item.to));
       return matched ? matched.key : 'instance';
     },
     currentTitle() {
+      if (this.$route.name === 'DmOpsInstanceDetail') {
+        return this.$t('shi-li-xiang-qing');
+      }
       const matched = this.navItems.find((item) => item.key === this.activeKey);
       return matched ? matched.label : '';
     }

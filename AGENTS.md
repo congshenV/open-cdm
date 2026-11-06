@@ -21,6 +21,7 @@
 - 主要技术栈：
     - 后端：Java、JDK 17+、Gradle 9.5.0+、Spring / Spring Boot、MyBatis。
     - 前端：Vue 3、Vue CLI、JavaScript / TypeScript、Node.js 22.22.1。
+    - 运维服务：Python 3.11+、Flask 3、SQLAlchemy、gunicorn。
     - 运行数据库：MySQL 8.0+。
 
 ## 项目结构
@@ -36,9 +37,10 @@
   初始化和升级脚本目录。
 - `frontend/`：CloudDM Web 前端工程，也是后端 Gradle 中的 `cgdm-web` 模块。
 - `frontend/src/locales/`：前端国际化文案目录。
+- `dmops/`：独立的 Python 运维服务，不参与 Gradle 构建，代码与 CloudDM 无编译期依赖，只通过 HTTP 交互。
 - `package/`：统一构建、tgz 打包、Docker 镜像和部署清单生成入口。
 - `docs/`：中英文文档与图片资源。
-- `backend/gradle.properties`：主版本号 `cg.clouddm.main.version` 所在文件。
+- `backend/gradle.properties`：主版本号 `cg.clouddm.main.version` 所在文件，dmops 镜像复用该版本号。
 
 ## 工作方式
 
@@ -119,6 +121,19 @@ cd frontend && npm run check-i18n
 - 修改任何前端源码后，必须从仓库根目录执行 `cd package && ./all_build.sh web`，且命令必须成功（退出码为
   0）；若构建失败，必须修复所有阻塞错误后才能认定任务完成，不得以“既有问题”或“与本次改动无关”为由跳过。
 - 修改用户可见文案时，同步维护 `frontend/src/locales/`。
+
+### 运维服务（dmops）
+
+```bash
+cd dmops && make venv PYTHON=python3.12 && make install   # 环境准备，需要 Python 3.11+
+cd dmops && make run                                      # 本地启动，默认 0.0.0.0:8080
+cd dmops && make lint                                     # compileall 语法检查
+cd dmops && make test                                     # pytest（tests/ 目录建立后生效）
+```
+
+- dmops 只从环境变量读取配置，本地调试用 `.env` 或直接 export，不要把密钥写进代码和文档。
+- dmops 不参与 Gradle 构建；`package/package.sh --build` 会额外产出一个 `cgdm-dmops.tar.gz` 源码包供镜像构建。
+- 镜像名 `clougence/cgdm-dmops`，版本号、架构标签与 console / sidecar / alone 完全一致。
 
 ## 编码规则
 

@@ -21,6 +21,7 @@ services:
       - "8008:8008"
     depends_on:
       - dm_mysql
+      - dm_dmops
     volumes:
       - cgdm_console_conf:/root/cgdm/console/conf
       - cgdm_console_logs:/root/cgdm/console/logs
@@ -36,6 +37,12 @@ services:
       DB_DATABASE: cdmgr
       DB_USERNAME: root
       DB_PASSWORD: 123456
+      # dmops proxy: the secret must be identical to DMOPS_IDENTITY_SECRET below,
+      # replace it with a random value in production (openssl rand -hex 32).
+      DMOPS_PROXY_ENABLED: "true"
+      DMOPS_PROXY_BASE_URL: http://dm_dmops:8080
+      DMOPS_PROXY_ALLOWED_PATH: /v1/
+      DMOPS_PROXY_IDENTITY_SECRET: "dmops-identity-secret-change-me"
 
   dm_sidecar:
     image: __IMAGE_PREFIX__-sidecar:__IMAGE_TAG__
@@ -54,6 +61,28 @@ services:
       DM_CLIENT_WSN: "wsn582nm54ca045p014288w6e919ec6294m430h427619v64g0pyqzcjb5040q3f"
       APP_SERVE_NAME: dm_console
       APP_SERVE_PORT: 8008
+
+  dm_dmops:
+    image: __IMAGE_PREFIX__-dmops:__IMAGE_TAG__
+    container_name: cgdm-dmops
+    restart: always
+    depends_on:
+      - dm_mysql
+    # no published port: only the console proxy talks to dmops
+    environment:
+      # dmops reuses the CloudDM metadata MySQL, the ops_* tables are prepared by the DBA.
+      DMOPS_DB_HOST: dm_mysql
+      DMOPS_DB_PORT: 3306
+      DMOPS_DB_NAME: cdmgr
+      DMOPS_DB_USER: root
+      DMOPS_DB_PASSWORD: 123456
+      DMOPS_IDENTITY_SECRET: "dmops-identity-secret-change-me"
+      # console address for datasource registration (JWT relay) and syncQuery (AK/SK)
+      # verification; inside docker network point it at the console service name.
+      DMOPS_CDM_CONSOLE_URL: http://dm_console:8222
+      # addDs envId / clusterId (registered datasource placement), defaults shown.
+      DMOPS_CDM_ENV_ID: "1"
+      DMOPS_CDM_CLUSTER_ID: "2"
 
 volumes:
   cgdm_console_conf:

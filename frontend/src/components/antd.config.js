@@ -8,6 +8,7 @@ import {
   Button,
   Checkbox,
   DatePicker,
+  Descriptions,
   Dropdown,
   Form,
   Input,
@@ -16,6 +17,7 @@ import {
   Popconfirm,
   Popover,
   Radio,
+  Result,
   Select,
   Switch,
   Table,
@@ -43,6 +45,7 @@ export default {
     app.use(Button);
     app.use(Checkbox);
     app.use(DatePicker);
+    app.use(Descriptions);
     app.use(Dropdown);
     app.use(Form);
     app.use(Input);
@@ -51,6 +54,7 @@ export default {
     app.use(Popconfirm);
     app.use(Popover);
     app.use(Radio);
+    app.use(Result);
     app.use(Select);
     app.use(Switch);
     app.use(Table);
