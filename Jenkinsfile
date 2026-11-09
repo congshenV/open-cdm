@@ -1,4 +1,4 @@
-// Build the CloudDM console and sidecar Docker images and push them to
+// Build the CloudDM console, sidecar and dmops Docker images and push them to
 // an Aliyun ACR registry.
 //
 // The builder agent is itself a container (often with only an old JVM),
@@ -33,7 +33,7 @@ pipeline {
         BUILD_IMAGE  = 'cgdm-build-env:ci'
         ACR          = 'maas-registry-vpc.cn-shanghai.cr.aliyuncs.com'
         NAMESPACE    = 'ack'                          // TODO: your ACR namespace
-        SERVICES     = 'console sidecar'
+        SERVICES     = 'console sidecar dmops'
         BUILD_ARCH   = 'x86_64'
     }
 
@@ -52,7 +52,7 @@ pipeline {
 
                     echo """
 =========================================
-Build CloudDM console & sidecar
+Build CloudDM console, sidecar & dmops
 =========================================
 Build version: ${env.BUILD_VERSION}
 Image tag:     ${env.IMAGE_TAG}
@@ -100,7 +100,7 @@ Commit:        ${env.GIT_COMMIT ?: 'unknown'}
                 }.join('\n')
                 echo """
 ===========================================
-  Console & sidecar built and pushed
+  CloudDM images built and pushed
 ===========================================
 Images:
 ${lines}

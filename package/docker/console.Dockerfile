@@ -24,6 +24,11 @@ ENV DB_HOST=
 ENV DB_PORT=3306
 ENV DB_DATABASE=cdmgr
 ENV DB_USERNAME=
+# dmops reverse proxy; the alone image has no dmops, cluster manifests override these
+ENV DMOPS_PROXY_ENABLED=false
+ENV DMOPS_PROXY_BASE_URL=
+ENV DMOPS_PROXY_ALLOWED_PATH=/v1/
+ENV DMOPS_PROXY_IDENTITY_SECRET=
 
 ADD cgdm-console.tar.gz /root/
 COPY shared/console/console.properties /docker-entrypoint-init/copy_console.properties

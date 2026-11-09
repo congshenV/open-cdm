@@ -173,6 +173,16 @@ spec:
               value: root
             - name: DB_PASSWORD
               value: "123456"
+            # dmops proxy: the secret must match DMOPS_IDENTITY_SECRET of dm-dmops,
+            # replace it with a random value in production (openssl rand -hex 32).
+            - name: DMOPS_PROXY_ENABLED
+              value: "true"
+            - name: DMOPS_PROXY_BASE_URL
+              value: http://dm-dmops:8080
+            - name: DMOPS_PROXY_ALLOWED_PATH
+              value: /v1/
+            - name: DMOPS_PROXY_IDENTITY_SECRET
+              value: "dmops-identity-secret-change-me"
           volumeMounts:
             - name: conf
               mountPath: /root/cgdm/console/conf
@@ -292,3 +302,62 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: cgdm-sidecar-0-data
+---
+# ---------------------- dm-dmops ----------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: dm-dmops
+  namespace: cgdm
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: dm-dmops
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dm-dmops
+  namespace: cgdm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dm-dmops
+  template:
+    metadata:
+      labels:
+        app: dm-dmops
+    spec:
+      containers:
+        - name: dmops
+          image: __IMAGE_PREFIX__-dmops:__IMAGE_TAG__
+          ports:
+            - containerPort: 8080
+          env:
+            # dmops reuses the CloudDM metadata MySQL, the ops_* tables are prepared by the DBA.
+            - name: DMOPS_DB_HOST
+              value: dm-mysql
+            - name: DMOPS_DB_PORT
+              value: "3306"
+            - name: DMOPS_DB_NAME
+              value: cdmgr
+            - name: DMOPS_DB_USER
+              value: root
+            - name: DMOPS_DB_PASSWORD
+              value: "123456"
+            - name: DMOPS_IDENTITY_SECRET
+              value: "dmops-identity-secret-change-me"
+            # console address for datasource registration (JWT relay) and syncQuery (AK/SK)
+            # verification; inside the cluster point it at the console service name.
+            - name: DMOPS_CDM_CONSOLE_URL
+              value: http://dm-console:8222
+            # addDs envId / clusterId (registered datasource placement), defaults shown.
+            - name: DMOPS_CDM_ENV_ID
+              value: "1"
+            - name: DMOPS_CDM_CLUSTER_ID
+              value: "2"

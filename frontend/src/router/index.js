@@ -64,6 +64,44 @@ const routes = [
         component: () => import(/* webpackChunkName: "sql" */ '@/views/sql/index')
       },
       {
+        // 运维控制台是独立区域，自带侧边栏与内容区，不参与主站菜单
+        path: 'dmops',
+        component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/index'),
+        redirect: '/dmops/instance',
+        children: [
+          {
+            path: 'instance',
+            name: 'DmOpsInstance',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/InstanceList')
+          },
+          {
+            path: 'instance/:instanceId',
+            name: 'DmOpsInstanceDetail',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/InstanceDetail')
+          },
+          {
+            path: 'drill',
+            name: 'DmOpsDrillList',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/DrillList')
+          },
+          {
+            path: 'drill/:drillId',
+            name: 'DmOpsDrillDetail',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/DrillDetail')
+          },
+          {
+            path: 'accounts',
+            name: 'DmOpsAccount',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/AccountList')
+          },
+          {
+            path: 'config',
+            name: 'DmOpsConfig',
+            component: () => import(/* webpackChunkName: "dmops" */ '@/views/dmops/ConfigManage')
+          }
+        ]
+      },
+      {
         path: 'cicd',
         name: 'CICD',
         component: () => import(/* webpackChunkName: "cicd" */ '@/views/cicd/index')
@@ -238,6 +276,12 @@ router.beforeEach(async (to, from, next) => {
       next({ path: store.state.defaultRedirectUrl || '/sql', replace: true });
       return;
     }
+  }
+
+  // 运维控制台仅管理员可进入：入口对非管理员隐藏，直接访问 URL 同样拦截。
+  if (to.path.startsWith('/dmops') && !store.getters.isDmOpsAdmin) {
+    next({ path: store.state.defaultRedirectUrl || '/sql', replace: true });
+    return;
   }
 
   next();

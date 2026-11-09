@@ -39,6 +39,7 @@ PASS/FAIL，只维护当前真实入口、数据准备、操作、断言和清�
 | SQL   | [`sql/table_editor_dameng_defaults.md`](sql/table_editor_dameng_defaults.md)                 | SQL 工作台 → 达梦新建表            | 默认值、虚拟列、标识符与插件契约       | Smoke、Main Flow、Boundaries、Lifecycle、Permission、State Consistency               |
 | SQL   | [`sql/datasource_connection_error.md`](sql/datasource_connection_error.md) | SQL 工作台 → 连接异常弹窗 | 数据源名称、数据库图标、居中提示与仅关闭操作 | Smoke、Main Flow、Extreme、Lifecycle、State Consistency |
 | 系统设置  | [`system/query_result_cache_capacity.md`](system/query_result_cache_capacity.md)             | 设置 → 偏好设置 → 数据查询             | 容量配置、零值语义、双语文案与持久化一致性   | Smoke、Main Flow、Boundaries、Extreme、Repeat And Concurrency、Failure And Recovery、Lifecycle、Permission、State Consistency |
+| 运维控制台 | [`system/dmops_config_management.md`](system/dmops_config_management.md)                  | `/dmops/config`               | 加密脱敏、类型校验、scope+key 唯一约束 | Smoke、Main Flow、Boundaries、Repeat And Concurrency、Lifecycle、Permission、State Consistency |
 
 新增用户流程时，在对应业务目录创建一份文档，并同步更新本索引。文档结构以 [`TEMPLATE.md`](TEMPLATE.md) 为准。
 

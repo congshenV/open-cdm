@@ -1,0 +1,10 @@
+flask==3.0.3
+gunicorn==22.0.0
+SQLAlchemy==2.0.55
+PyMySQL==1.2.3
+alibabacloud_credentials==1.0.12
+cryptography==50.0.2
+alibabacloud_rds20140815==16.1.0
+alibabacloud_tea_openapi==0.4.6
+alibabacloud_tea_util==0.3.15
+pytest==8.3.4
