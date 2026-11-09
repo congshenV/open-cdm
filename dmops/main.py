@@ -55,6 +55,10 @@ def _register_hooks(app: Flask) -> None:
         failed = identity.verify_identity()
         if failed is not None:
             return failed
+        # 写操作与配置明文详情仅管理员可用（console 代理注入管理员标志）。
+        failed = identity.verify_admin()
+        if failed is not None:
+            return failed
 
     @app.teardown_request
     def teardown_request_hook(_exc):

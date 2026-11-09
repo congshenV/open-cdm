@@ -49,6 +49,7 @@ class Identity:
     # console 注入的 header 名。
     user_header: str = 'X-DmOps-User'
     signature_header: str = 'X-DmOps-Signature'
+    admin_header: str = 'X-DmOps-Is-Admin'
     request_id_header: str = 'X-Request-Id'
 
 

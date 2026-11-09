@@ -15,7 +15,7 @@
               <span class="sql-compact-header__title">{{ $t('sql-cha-xun') }}</span>
             </div>
             <div class="sql-compact-header__actions">
-              <router-link to="/dmops" class="sql-compact-header__back" :title="$t('yun-wei-kong-zhi-tai')">
+              <router-link v-if="isDmOpsAdmin" to="/dmops" class="sql-compact-header__back" :title="$t('yun-wei-kong-zhi-tai')">
                 <CustomIcon type="icon-v2-cluster" size="14px" />
                 <span>{{ $t('yun-wei-kong-zhi-tai') }}</span>
               </router-link>
@@ -177,7 +177,7 @@ export default {
   },
   mixins: [setOpPasswordMixin, setApprovalProcessMixin, enterOpPwdMixin],
   computed: {
-    ...mapGetters(['isDesktop', 'displayVersion', 'isInternalUser']),
+    ...mapGetters(['isDesktop', 'displayVersion', 'isInternalUser', 'isDmOpsAdmin']),
     ...mapState(['userInfo', 'myAuth', 'globalSetting', 'defaultRedirectUrl', 'dmGlobalSetting', 'mySystemMenuItems']),
     ...mapGetters(['isSaas']),
     isJsonCell() {

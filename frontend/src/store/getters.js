@@ -121,5 +121,8 @@ export default {
   },
   isInternalUser: (state) =>
     state.userInfo.accountType === 'PRIMARY_ACCOUNT' || (state.userInfo.accountType !== 'PRIMARY_ACCOUNT' && state.userInfo.bindType === 'INTERNAL'),
+  // 运维控制台仅管理员可用：与 console 后端 RequestAuth 的放行口径一致
+  // （maintainer / 主账号），dmops 写接口在服务端同样按该口径拦截。
+  isDmOpsAdmin: (state) => state.userInfo?.accountType === 'PRIMARY_ACCOUNT' || state.userInfo?.maintainer === true,
   isDark: (state) => state.theme === 'dark'
 };

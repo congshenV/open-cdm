@@ -278,6 +278,12 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
+  // 运维控制台仅管理员可进入：入口对非管理员隐藏，直接访问 URL 同样拦截。
+  if (to.path.startsWith('/dmops') && !store.getters.isDmOpsAdmin) {
+    next({ path: store.state.defaultRedirectUrl || '/sql', replace: true });
+    return;
+  }
+
   next();
 });
 

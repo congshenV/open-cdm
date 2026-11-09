@@ -28,7 +28,7 @@
       </h1>
     </div>
     <div class="app-content-header__right">
-      <router-link to="/dmops" class="app-content-header__link" :title="$t('yun-wei-kong-zhi-tai')">
+      <router-link v-if="isDmOpsAdmin" to="/dmops" class="app-content-header__link" :title="$t('yun-wei-kong-zhi-tai')">
         <CustomIcon type="icon-v2-cluster" size="14px" />
         <span>{{ $t('yun-wei-kong-zhi-tai') }}</span>
       </router-link>
@@ -53,7 +53,7 @@ export default {
   components: { AppUserActions },
   emits: ['check-version'],
   computed: {
-    ...mapGetters(['isDesktop']),
+    ...mapGetters(['isDesktop', 'isDmOpsAdmin']),
     ...mapState(['dmGlobalSetting', 'myCatLog', 'mySystemMenuItems', 'sidebarMenu', 'userInfo']),
     showSqlLink() {
       return this.myCatLog.includes('CAT_DM_CONSOLE') && !this.$route.path.startsWith('/sql');

@@ -33,6 +33,9 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.clougence.clouddm.console.web.component.config.DmOpsProxyConfig;
 import com.clougence.clouddm.console.web.global.jwtsession.JwtService;
 import com.clougence.clouddm.console.web.global.jwtsession.RequestAuth;
+import com.clougence.clouddm.console.web.service.auth.RdpUserService;
+import com.clougence.clouddm.platform.dal.model.auth.AccountType;
+import com.clougence.clouddm.platform.dal.model.auth.DmAuthUserDO;
 import com.clougence.rdp.component.openapi.OpenApiSigner;
 import com.clougence.utils.StringUtils;
 import com.clougence.utils.io.IOUtils;
@@ -62,13 +65,13 @@ import okhttp3.ResponseBody;
 @RequestMapping(DmOpsProxyController.URL_PREFIX)
 public class DmOpsProxyController {
 
-    public static final String       URL_PREFIX = "/api/dmops";
+    public static final String       URL_PREFIX            = "/api/dmops";
 
     /**
      * Headers that must not be forwarded to dmops or copied back, they are connection
      * scoped or will corrupt the proxied response.
      */
-    private static final Set<String> HOP_BY_HOP = new HashSet<>(
+    private static final Set<String> HOP_BY_HOP            = new HashSet<>(
         Arrays.asList("connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"));
 
     /**
@@ -82,6 +85,8 @@ public class DmOpsProxyController {
     private DmOpsProxyConfig         config;
     @Resource
     private JwtService               jwtService;
+    @Resource
+    private RdpUserService           userService;
 
     @RequestAuth(strategy = RequestAuth.AuthStrategy.Ignore)
     @RequestMapping("/**")
@@ -101,6 +106,9 @@ public class DmOpsProxyController {
             return;
         }
         String uid = jwt.getId();
+        // dmops 的写操作仅管理员可用：与 JwtManager.verifyAuth 的放行口径保持一致
+        // （maintainer 或主账号视为管理员），由 dmops 侧做最终拦截。
+        boolean isAdmin = this.isAdmin(uid);
 
         // request.getRequestURI() includes the servlet context path, so strip the prefix
         // by its position rather than assuming the uri starts with it.
@@ -120,7 +128,7 @@ public class DmOpsProxyController {
         String targetUrl = buildTargetUrl(restPath, request.getQueryString());
         Request okRequest;
         try {
-            okRequest = buildOkRequest(request, targetUrl, uid);
+            okRequest = buildOkRequest(request, targetUrl, uid, isAdmin);
         } catch (IOException e) {
             String msg = "[DmOpsProxy] failed to read request body. target=" + targetUrl;
             log.error(msg, e);
@@ -180,7 +188,15 @@ public class DmOpsProxyController {
         return url;
     }
 
-    private Request buildOkRequest(HttpServletRequest request, String targetUrl, String uid) throws IOException {
+    private boolean isAdmin(String uid) {
+        DmAuthUserDO userDO = this.userService.getUserByUid(uid);
+        if (userDO == null) {
+            return false;
+        }
+        return userDO.isMaintainer() || userDO.getAccountType() == AccountType.PRIMARY_ACCOUNT;
+    }
+
+    private Request buildOkRequest(HttpServletRequest request, String targetUrl, String uid, boolean isAdmin) throws IOException {
         String method = request.getMethod();
         RequestBody body = null;
         if (!StringUtils.equalsIgnoreCase(method, "GET") && !StringUtils.equalsIgnoreCase(method, "HEAD")) {
@@ -206,6 +222,7 @@ public class DmOpsProxyController {
         headerBuilder.set("X-DmOps-User", uid);
         headerBuilder.set("X-DmOps-Signature", signIdentity(uid));
         headerBuilder.set("X-Request-Id", UUID.randomUUID().toString());
+        headerBuilder.set("X-DmOps-Is-Admin", String.valueOf(isAdmin));
 
         return new Request.Builder().url(HttpUrl.get(targetUrl)).headers(headerBuilder.build()).method(method, body).build();
     }
