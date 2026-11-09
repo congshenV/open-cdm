@@ -3,9 +3,6 @@
 每个账号根据自己的认证配置构建独立的 ``CredentialClient``，并在进程内缓存。
 认证方式来自 ``ops_cloud_credential`` 表，dmops 只读取，不在环境变量里配置
 账号级凭据。
-
-TODO(security): access_key_secret / security_token 当前在表中明文存储，
-后续改为 KMS 加密后再解密使用。
 """
 
 import logging

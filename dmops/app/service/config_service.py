@@ -1,7 +1,5 @@
 """配置管理业务。
 
-TODO(security): 配置管理接口暂未做管理员权限校验，后续增加白名单。
-
 配置值语义参考 dms 的 dms_common_config：按 config_type 做类型校验，
 is_encrypt=true 的项 AES-256-CBC 加密存储（密文 base64(iv+cipher)，与 dms 对齐）。
 列表脱敏返回，详情解密返回明文供编辑回填。
