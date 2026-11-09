@@ -70,3 +70,6 @@ backend/**/bin/
 
 # local tool state
 /.lithe/
+
+# 本地计划/设计过程文档，不入库
+docs/plan/
