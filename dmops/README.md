@@ -11,7 +11,7 @@ dmops 是**平级独立服务**，不是 CloudDM 的模块：
 
 - 不直连数据库实例，一律经 CloudDM 的 `console → sidecar` 通道执行 SQL
 - 不直连 sidecar，不理解 RSocket
-- 不读写 CloudDM 的元数据库，只通过 HTTP OpenAPI 交互
+- 直读少量元数据表 CloudDM 的元数据库，其他只通过 HTTP OpenAPI 交互
 - 与 CloudDM 版本完全解耦，各自独立升级
 
 ## 目录结构

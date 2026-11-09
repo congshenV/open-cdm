@@ -9,9 +9,10 @@ ARG BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-# Override for networks that cannot reach pypi.org, e.g.
-#   --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-ARG PIP_INDEX_URL=https://pypi.org/simple
+# Aliyun PyPI mirror by default (the CI builder runs in a China region network);
+# override back to pypi.org on overseas builders:
+#   --build-arg PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata \
