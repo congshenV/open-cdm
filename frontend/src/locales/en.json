@@ -4997,5 +4997,7 @@
   "fu-yong-yi-you-shu-ju-yuan": "The instance already exists; reused it (dsId: {dsId})",
   "dai-shu-ju-jiao-yan": "Awaiting verification",
   "shu-ju-jiao-yan-wan-cheng": "Verification completed",
-  "yan-lian-wan-cheng": "Drill completed"
+  "yan-lian-wan-cheng": "Drill completed",
+  "mo-ren-ping-zheng": "Default credential chain",
+  "mo-ren-ping-zheng-shuo-ming": "Uses the runtime environment's default credential chain (e.g. the RAM role bound via ACK RRSA or an ECS instance role); no credentials need to be entered. Use this for the account where dmops itself is deployed."
 }

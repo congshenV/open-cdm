@@ -24,7 +24,16 @@
           </a-select>
         </a-form-item>
 
-        <template v-if="form.credential_type">
+        <!-- default：运行环境默认凭据链（ACK RRSA / 实例 RAM 角色），无需填写凭据 -->
+        <a-alert
+          v-if="form.credential_type === 'default'"
+          class="dmops-credential-alert"
+          type="info"
+          show-icon
+          :message="$t('mo-ren-ping-zheng-shuo-ming')"
+        />
+
+        <template v-if="form.credential_type && form.credential_type !== 'default'">
           <a-form-item :label="$t('access-key-id')" :required="typeChanged">
             <a-input v-model:value="form.access_key_id" :maxlength="128" :placeholder="$t('access-key-id')" />
             <div v-if="maskedAccessKeyId" class="dmops-field-hint">{{ $t('dang-qian-access-key-id', { id: maskedAccessKeyId }) }}</div>
@@ -49,11 +58,11 @@
               <a-input v-model:value="form.role_session_expiration" :maxlength="4" :placeholder="$t('hui-hua-shi-chang-zhan-wei')" />
             </a-form-item>
           </template>
-
-          <a-form-item :label="$t('qi-yong')">
-            <a-switch v-model:checked="form.enabled" />
-          </a-form-item>
         </template>
+
+        <a-form-item v-if="form.credential_type" :label="$t('qi-yong')">
+          <a-switch v-model:checked="form.enabled" />
+        </a-form-item>
       </a-form>
     </a-spin>
 
@@ -76,17 +85,20 @@ import Toast from '@/utils/toast';
 import { deleteCredential, getCredential, saveCredential } from '@/services/http/dmops';
 import { CREDENTIAL_TYPES, credentialTypeLabel } from '@/views/dmops/utils/credential';
 
-// 页面只开放常用三种认证方式，其余类型后端支持但不在表单里维护
+// 页面维护常用认证方式，其余类型后端支持但不在表单里维护
 const SUPPORTED_TYPES = CREDENTIAL_TYPES;
 const TYPE_FIELDS = {
   access_key: ['access_key_id', 'access_key_secret'],
   sts: ['access_key_id', 'access_key_secret', 'security_token'],
-  ram_role_arn: ['access_key_id', 'access_key_secret', 'role_arn', 'role_session_name', 'role_session_expiration']
+  ram_role_arn: ['access_key_id', 'access_key_secret', 'role_arn', 'role_session_name', 'role_session_expiration'],
+  // default：运行环境默认凭据链（ACK RRSA 等），无需任何字段。
+  default: []
 };
 const REQUIRED_FIELDS = {
   access_key: ['access_key_id', 'access_key_secret'],
   sts: ['access_key_id', 'access_key_secret', 'security_token'],
-  ram_role_arn: ['access_key_id', 'access_key_secret', 'role_arn']
+  ram_role_arn: ['access_key_id', 'access_key_secret', 'role_arn'],
+  default: []
 };
 const EMPTY_FORM = () => ({
   credential_type: 'access_key',

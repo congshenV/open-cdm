@@ -4976,5 +4976,7 @@
   "fu-yong-yi-you-shu-ju-yuan": "实例已存在，复用该实例（dsId：{dsId}）",
   "dai-shu-ju-jiao-yan": "待数据校验",
   "shu-ju-jiao-yan-wan-cheng": "数据校验完成",
-  "yan-lian-wan-cheng": "演练完成"
+  "yan-lian-wan-cheng": "演练完成",
+  "mo-ren-ping-zheng": "默认凭据链",
+  "mo-ren-ping-zheng-shuo-ming": "使用运行环境提供的默认凭据链（如 ACK RRSA 绑定的 RAM 角色、ECS 实例角色等），无需填写任何凭据。适用于 dmops 访问其自身部署所在的账号。"
 }
