@@ -97,11 +97,18 @@
                   ></DataSourceIcon>
                   <div class="datasource-info-text">
                     <div class="datasource-main-info">
-                      <Tooltip :content="row.instanceDesc || $t('zan-wu-miao-shu')" placement="bottom" transfer>
+                      <Poptip
+                        :content="row.instanceId"
+                        :disabled="!row.instanceId"
+                        trigger="hover"
+                        placement="bottom"
+                        transfer
+                        popper-class="description-popup"
+                      >
                         <span class="datasource-primary-content datasource-name">
                           {{ row.instanceDesc || $t('zan-wu-miao-shu') }}
                         </span>
-                      </Tooltip>
+                      </Poptip>
                       <CustomIcon
                         class="iconfont icon datasource-edit-icon"
                         v-if="myAuth.includes('RDP_DS_MANAGE') || myAuth.includes('RDP_ALL_DATASOURCE_MANAGE')"
@@ -118,28 +125,24 @@
                         <span class="datasource-creating-indicator"></span>
                       </Tooltip>
                     </div>
-                    <div class="data-job-desc datasource-secondary-content datasource-id-text">
-                      {{ row.instanceId }}
-                    </div>
                   </div>
                 </div>
               </template>
               <template #action="{ row }">
-                <div v-if="canManageDataSource" class="datasource-action-group">
+                <div v-if="canManageDataSource" class="table-row-actions">
                   <Button
-                    class="datasource-action-button datasource-action-test"
                     type="text"
                     size="small"
-                    :loading="testingDataSourceId === row.id"
-                    :disabled="row.lifeCycleState !== 'CREATED' || testingDataSourceId !== null"
+                    :loading="testingDataSourceIds.has(row.id)"
+                    :disabled="row.lifeCycleState !== 'CREATED' || testingDataSourceIds.has(row.id)"
                     @click="handleTestConnection(row)"
                   >
                     {{ $t('ce-shi') }}
                   </Button>
-                  <Button class="datasource-action-button" type="text" size="small" @click="handleKvConfigs(row)">
+                  <Button type="text" size="small" @click="handleKvConfigs(row)">
                     {{ $t('bian-ji') }}
                   </Button>
-                  <Button type="text" size="small" class="datasource-action-button datasource-action-danger" @click="handleDeleteConfirm(row)">
+                  <Button type="text" size="small" @click="handleDeleteConfirm(row)">
                     {{ $t('shan-chu') }}
                   </Button>
                 </div>
@@ -151,9 +154,16 @@
               </template>
               <template #instanceDesc="{ row }">
                 <div style="position: relative">
-                  <Tooltip :content="row.instanceDesc" placement="right" transfer>
+                  <Poptip
+                    :content="row.instanceDesc"
+                    :disabled="!row.instanceDesc"
+                    trigger="hover"
+                    placement="right"
+                    transfer
+                    popper-class="description-popup"
+                  >
                     <span class="datasource-desc-content">{{ row.instanceDesc }}</span>
-                  </Tooltip>
+                  </Poptip>
                   <CustomIcon
                     type="icon-v2-EditSimple"
                     size="13px"
@@ -470,7 +480,7 @@ export default {
     return {
       showDeleteAccountModal: false,
       dsKvConfigs: [],
-      testingDataSourceId: null,
+      testingDataSourceIds: new Set(),
       securitySetting: [],
       securitySettingObj: {},
       sid: '',
@@ -1059,7 +1069,11 @@ export default {
       });
     },
     async handleTestConnection(row) {
-      this.testingDataSourceId = row.id;
+      if (this.testingDataSourceIds.has(row.id)) {
+        return;
+      }
+
+      this.testingDataSourceIds.add(row.id);
       try {
         const res = await this.$services.dmDataSourceTestConnect({
           data: {
@@ -1074,7 +1088,7 @@ export default {
       } catch (e) {
         this.$Message.error(e?.message || this.$t('ce-shi-lian-jie-shi-bai'));
       } finally {
-        this.testingDataSourceId = null;
+        this.testingDataSourceIds.delete(row.id);
       }
     },
     resetAccountInfo() {
@@ -1258,8 +1272,8 @@ export default {
   border: 1px solid #e0e6ee;
   border-radius: 6px;
   padding: 0 12px;
-  background: #ffffff;
-  color: #1f2937;
+  background: var(--bg-card);
+  color: var(--text-primary);
   cursor: pointer;
   text-align: left;
   transition:
@@ -1269,13 +1283,13 @@ export default {
 
   &:hover {
     border-color: #41d28f;
-    background: #fbfffd;
+    background: var(--bg-hover);
     box-shadow: inset 0 0 0 1px #41d28f;
   }
 
   &.active {
     border-color: #18ae66;
-    background: #effbf5;
+    background: var(--sidebar-active-bg);
     box-shadow: inset 0 0 0 1px #18ae66;
   }
 }
@@ -1345,13 +1359,6 @@ export default {
 .datasource-name {
   font-size: 14px;
   font-weight: 500;
-}
-
-.datasource-id-text {
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .datasource-edit-icon {
@@ -1435,56 +1442,12 @@ export default {
   font-size: 14px;
   border-radius: 50%;
   top: -12px;
-  background: #ffffff;
+  background: var(--bg-card);
   text-align: center;
 }
 
 .job-list-source {
   left: -10px;
-}
-
-.data-job-desc {
-  .iconfont {
-    visibility: hidden;
-  }
-
-  &:hover .iconfont {
-    visibility: visible;
-  }
-}
-
-.datasource-action-group {
-  display: flex;
-  align-items: center;
-  min-width: 112px;
-  gap: 4px;
-  justify-content: flex-start;
-  white-space: nowrap;
-
-  :deep(.ivu-btn-text) {
-    height: 28px;
-    padding: 0 2px;
-    font-weight: 500;
-  }
-}
-
-.datasource-action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-}
-
-.datasource-action-test {
-  min-width: 44px;
-
-  :deep(.ivu-load-loop) {
-    margin-right: 2px;
-  }
-}
-
-.datasource-action-danger {
-  color: #ed4014;
 }
 
 .delete-datasource-confirm-tip {

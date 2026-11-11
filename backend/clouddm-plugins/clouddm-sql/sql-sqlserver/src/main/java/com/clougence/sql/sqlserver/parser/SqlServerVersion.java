@@ -1,6 +1,17 @@
 /*
  * Copyright 2026 杭州开云集致科技有限公司
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.sql.sqlserver.parser;
 
@@ -14,7 +25,8 @@ public enum SqlServerVersion {
     MSSQL_2016(13, 2016),
     MSSQL_2017(14, 2017),
     MSSQL_2019(15, 2019),
-    MSSQL_2022(16, 2022);
+    MSSQL_2022(16, 2022),
+    MSSQL_2025(17, 2025);
 
     public static final SqlServerVersion LATEST = values()[values().length - 1];
 
@@ -28,6 +40,7 @@ public enum SqlServerVersion {
 
     public static SqlServerVersion parse(String version) {
         String value = version == null ? "" : version.trim();
+        value = value.replaceFirst("^Microsoft SQL Server ([0-9]{4})(?:\\s.*)?$", "$1");
         int end = 0;
         while (end < value.length() && Character.isDigit(value.charAt(end))) {
             end++;

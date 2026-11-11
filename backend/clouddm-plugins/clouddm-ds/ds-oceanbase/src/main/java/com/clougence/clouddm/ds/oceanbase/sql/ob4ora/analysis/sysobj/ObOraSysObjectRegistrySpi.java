@@ -2,16 +2,29 @@
  * Copyright 2026 杭州开云集致科技有限公司
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.clouddm.ds.oceanbase.sql.ob4ora.analysis.sysobj;
 
 import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.ObOraSqlEngineSpi;
+import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.analysis.reference.ObOraResourceRegistry;
+import com.clougence.clouddm.ds.oceanbase.sql.parser.OceanBaseVersion;
 import com.clougence.clouddm.sdk.sql.analysis.behavior.BehaviorAction;
 import com.clougence.clouddm.sdk.sql.analysis.behavior.TargetType;
 import com.clougence.sql.common.analysis.sysobj.AbstractSysObjectRegistrySpi;
+import com.clougence.sql.common.registry.FunctionBehavior;
 
-/** OceanBase Oracle-mode virtual resources. */
 public final class ObOraSysObjectRegistrySpi extends AbstractSysObjectRegistrySpi {
+    private final ObOraResourceRegistry resources = ObOraResourceRegistry.instance();
 
     @Override
     public String name() {
@@ -20,6 +33,18 @@ public final class ObOraSysObjectRegistrySpi extends AbstractSysObjectRegistrySp
 
     @Override
     protected boolean isRegisteredResource(BehaviorAction action, TargetType targetType, String catalog, String schema, String objectName, String databaseVersion) {
+        if (action == BehaviorAction.CALL && targetType == TargetType.Function) {
+            String name = objectName;
+            if (schema != null) {
+                name = schema + "." + name;
+            }
+
+            OceanBaseVersion release = OceanBaseVersion.parse(databaseVersion);
+
+            FunctionBehavior classification = resources.functionBehavior(name);
+            return classification.action() == BehaviorAction.CALL && !classification.privileged() && !classification.unsafe() && resources.isSystemFunction(name, release);
+        }
+
         return action == BehaviorAction.READ && targetType == TargetType.Table && schema == null && "DUAL".equalsIgnoreCase(objectName);
     }
 }

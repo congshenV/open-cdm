@@ -15,6 +15,7 @@
  */
 package com.clougence.clouddm.console.web.global.jwtsession;
 
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.http.server.ServerHttpRequest;
@@ -25,6 +26,7 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import com.clougence.clouddm.console.web.service.auth.RdpUserService;
+import com.clougence.clouddm.console.web.util.RdpLocal;
 import com.clougence.utils.StringUtils;
 
 import jakarta.annotation.Resource;
@@ -39,6 +41,7 @@ public class WebSoInterceptor implements HandshakeInterceptor {
     public static final String  WS_PUSER_ID     = "WS_PUSER_ID";
     public static final String  WS_USER_ID      = "WS_USER_ID";
     public static final String  WS_USER_ROLE    = "WS_USER_ROLE";
+    public static final String  WS_LOCALE       = "WS_LOCALE";
     public static final String  WS_REQUEST_URI  = "WS_REQUEST_URI";
     public static final String  WS_CHECK_RESULT = "WS_CHECK_RESULT";
 
@@ -66,6 +69,7 @@ public class WebSoInterceptor implements HandshakeInterceptor {
         }
 
         JwtCheckResult checkResult = this.sessionManager.preHandle(httpReq, httpRes, () -> wsHandlerClass.getAnnotation(RequestAuth.class), null);
+        map.put(WS_LOCALE, RdpLocal.getLocal());
 
         String puid = (String) httpReq.getAttribute(RdpUserService.PUID);
         String uid = (String) httpReq.getAttribute(RdpUserService.UID);
@@ -84,6 +88,12 @@ public class WebSoInterceptor implements HandshakeInterceptor {
         if (userRole != null) {
             map.put(WS_USER_ROLE, userRole);
         }
+        String languageTag = httpReq.getParameter("locale");
+        Locale locale = httpReq.getLocale();
+        if (StringUtils.isNotBlank(languageTag)) {
+            locale = Locale.forLanguageTag(languageTag);
+        }
+        map.put(WS_LOCALE, locale);
         map.put(WS_REQUEST_URI, requestURI);
         map.put(WS_CHECK_RESULT, checkResult);
         return true;

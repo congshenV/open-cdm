@@ -3,27 +3,33 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.sql.sqlserver.analysis.behavior;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Locale;
+import java.util.*;
 
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.Parser;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.RuleNode;
 import org.antlr.v4.runtime.tree.TerminalNode;
-import org.antlr.v4.runtime.tree.ParseTree;
 
 import com.clougence.clouddm.sdk.sql.analysis.behavior.*;
 import com.clougence.clouddm.sdk.sql.parser.SplitQueryType;
 import com.clougence.schema.umi.struts.UmiTypes;
 import com.clougence.sql.common.analysis.behavior.RdbBehaviorObjectFactory;
+import com.clougence.sql.sqlserver.analysis.reference.MsSqlResourceRegistry;
 import com.clougence.sql.sqlserver.parser.antlr.SqlServerLexer;
 import com.clougence.sql.sqlserver.parser.antlr.SqlServerParser;
 import com.clougence.sql.sqlserver.parser.antlr.SqlServerParserBaseVisitor;
@@ -31,15 +37,17 @@ import com.clougence.sql.sqlserver.parser.antlr.SqlServerParserBaseVisitor;
 final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> {
 
     private final Parser                   parser;
-    private final Map<UmiTypes, Object>     levels;
+    private final Map<UmiTypes, Object>    levels;
     private final int                      baseLine;
+    private final boolean                  executing;
     private final RdbBehaviorObjectFactory objects;
     private final StatementBehavior        behavior = new StatementBehavior();
 
-    MsStatementBehaviorVisitor(Parser parser, Map<UmiTypes, Object> levels, int baseLine, int baseColumn){
+    MsStatementBehaviorVisitor(Parser parser, Map<UmiTypes, Object> levels, int baseLine, int baseColumn, boolean executing){
         this.parser = parser;
         this.levels = levels;
         this.baseLine = Math.max(1, baseLine);
+        this.executing = executing;
         this.objects = new RdbBehaviorObjectFactory(levels, baseLine, baseColumn);
         this.behavior.setStatementType(SplitQueryType.UNKNOWN);
     }
@@ -54,11 +62,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (tree instanceof SqlServerParser.Function_callContext function) {
             functionCall(function);
         }
-        if (tree instanceof TerminalNode terminal
-            && terminal.getSymbol().getType() == SqlServerParser.LOCAL_ID
-            && terminal.getText().startsWith("@@")) {
-            addUnary(SplitQueryType.SELECT, BehaviorAction.READ,
-                instanceNamed(TargetType.ConfigKey, terminal.getSymbol(), terminal.getText().toUpperCase(Locale.ROOT)));
+        if (tree instanceof TerminalNode terminal && terminal.getSymbol().getType() == SqlServerParser.LOCAL_ID && terminal.getText().startsWith("@@")) {
+            addUnary(SplitQueryType.SELECT, BehaviorAction.READ, instanceNamed(TargetType.ConfigKey, terminal.getSymbol(), terminal.getText().toUpperCase(Locale.ROOT)));
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             analyze(tree.getChild(i));
@@ -97,8 +102,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         setType(SplitQueryType.SESSION_SETTING_WRITE);
         if (!ctx.special_list().isEmpty()) {
             for (SqlServerParser.Special_listContext option : ctx.special_list()) {
-                addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE,
-                    instanceNamed(TargetType.ConfigKey, option.getStart(), option.getText().toUpperCase(Locale.ROOT)));
+                addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, instanceNamed(TargetType.ConfigKey, option.getStart(), option.getText()
+                    .toUpperCase(Locale.ROOT)));
             }
             return null;
         }
@@ -114,7 +119,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                             config.setObjectName(new ObjectName(null, null, name));
                             addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, config);
                         }
-                        default -> { }
+                        default -> {
+                        }
                     }
                 }
             }
@@ -132,8 +138,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             config = objects.instanceObject(TargetType.ConfigKey, start, ctx.LEVEL().getSymbol(), "TRANSACTION ISOLATION LEVEL");
             config.setObjectName(new ObjectName(null, null, "TRANSACTION ISOLATION LEVEL"));
         }
-        addRelation(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, config,
-            objects(object(TargetType.Table, ctx.table_name())));
+        addRelation(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, config, objects(object(TargetType.Table, ctx.table_name())));
         return null;
     }
 
@@ -198,8 +203,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitCreate_security_policy(SqlServerParser.Create_security_policyContext ctx) {
-        addRelation(SplitQueryType.CREATE_POLICY, BehaviorAction.CREATE,
-            qualifiedName(TargetType.RowAccessPolicy, ctx.schema_name, ctx.security_policy_name), policyDependencies(ctx));
+        addRelation(SplitQueryType.CREATE_POLICY, BehaviorAction.CREATE, qualifiedName(TargetType.RowAccessPolicy, ctx.schema_name, ctx.security_policy_name), policyDependencies(ctx));
         return null;
     }
 
@@ -344,8 +348,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitReconfigure_statement(SqlServerParser.Reconfigure_statementContext ctx) {
-        addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.APPLY,
-            unnamed(TargetType.ConfigKey, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.APPLY, unnamed(TargetType.ConfigKey, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
@@ -403,8 +406,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitShutdown_statement(SqlServerParser.Shutdown_statementContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.STOP,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.STOP, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
@@ -423,8 +425,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         addObject(targets, object(TargetType.Catalog, ctx.source_database));
         addRelation(SplitQueryType.CREATE_CATALOG, BehaviorAction.CREATE, object(TargetType.Catalog, ctx.database), targets);
         for (SqlServerParser.Database_snapshot_fileContext snapshot : ctx.database_snapshot_file()) {
-            addUnary(SplitQueryType.CREATE_CATALOG, BehaviorAction.CREATE,
-                instanceValue(TargetType.File, snapshot.STRING().getSymbol()));
+            addUnary(SplitQueryType.CREATE_CATALOG, BehaviorAction.CREATE, instanceValue(TargetType.File, snapshot.STRING().getSymbol()));
         }
         for (SqlServerParser.File_specContext file : descendants(ctx, SqlServerParser.File_specContext.class)) {
             addUnary(SplitQueryType.CREATE_CATALOG, BehaviorAction.CREATE, instanceValue(TargetType.File, file.file));
@@ -441,8 +442,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             database = currentCatalog(ctx.CURRENT().getSymbol());
         }
         if (ctx.new_name != null) {
-            addRelation(SplitQueryType.RENAME_CATALOG, BehaviorAction.RENAME, database,
-                objects(object(TargetType.Catalog, ctx.new_name)));
+            addRelation(SplitQueryType.RENAME_CATALOG, BehaviorAction.RENAME, database, objects(object(TargetType.Catalog, ctx.new_name)));
             return null;
         }
         SqlServerParser.Query_store_optionsContext queryStore = first(ctx, SqlServerParser.Query_store_optionsContext.class);
@@ -553,8 +553,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         BehaviorObject database = instanceValue(TargetType.Catalog, token);
         if (ctx.DATABASE_SNAPSHOT() != null) {
             Token snapshot = startToken(ctx.getChild(ctx.getChildCount() - 1));
-            addRelation(SplitQueryType.ADMIN, BehaviorAction.RESTORE, database,
-                objects(instanceValue(TargetType.Catalog, snapshot)));
+            addRelation(SplitQueryType.ADMIN, BehaviorAction.RESTORE, database, objects(instanceValue(TargetType.Catalog, snapshot)));
         } else {
             restore(ctx, database);
         }
@@ -646,8 +645,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitDbcc_show_statistics(SqlServerParser.Dbcc_show_statisticsContext ctx) {
-        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ,
-            tableFromString(ctx.id_or_string(0).getStart(), level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ, tableFromString(ctx.id_or_string(0).getStart(), level(UmiTypes.Catalog)));
         return null;
     }
 
@@ -706,50 +704,43 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitDbcc_freesessioncache(SqlServerParser.Dbcc_freesessioncacheContext ctx) {
-        addUnary(SplitQueryType.ADMIN_PERFORMANCE, BehaviorAction.RESET,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.ADMIN_PERFORMANCE, BehaviorAction.RESET, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_dropcleanbuffers(SqlServerParser.Dbcc_dropcleanbuffersContext ctx) {
-        addUnary(SplitQueryType.ADMIN_PERFORMANCE, BehaviorAction.RESET,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.ADMIN_PERFORMANCE, BehaviorAction.RESET, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_inputbuffer(SqlServerParser.Dbcc_inputbufferContext ctx) {
-        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_outputbuffer(SqlServerParser.Dbcc_outputbufferContext ctx) {
-        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_proccache(SqlServerParser.Dbcc_proccacheContext ctx) {
-        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_memorystatus(SqlServerParser.Dbcc_memorystatusContext ctx) {
-        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.PERFORMANCE, BehaviorAction.READ, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDbcc_useroptions(SqlServerParser.Dbcc_useroptionsContext ctx) {
-        addUnary(SplitQueryType.METADATA, BehaviorAction.READ,
-            unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
+        addUnary(SplitQueryType.METADATA, BehaviorAction.READ, unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance));
         return null;
     }
 
@@ -814,8 +805,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.NORESEED() != null) {
             action = BehaviorAction.READ;
         }
-        addUnary(SplitQueryType.ADMIN_TABLE, action,
-            tableFromString(ctx.id_or_string().getStart(), level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN_TABLE, action, tableFromString(ctx.id_or_string().getStart(), level(UmiTypes.Catalog)));
         return null;
     }
 
@@ -835,8 +825,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             if ("0".equals(ctx.database.getText())) {
                 catalog = level(UmiTypes.Catalog);
             }
-            addUnary(SplitQueryType.ADMIN_TABLE, BehaviorAction.REPAIR,
-                tableFromString(ctx.table_or_view.getStart(), catalog));
+            addUnary(SplitQueryType.ADMIN_TABLE, BehaviorAction.REPAIR, tableFromString(ctx.table_or_view.getStart(), catalog));
         }
         return null;
     }
@@ -903,8 +892,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 targets.add(instanceValue(TargetType.ResourceGroup, startToken(child)));
             }
         }
-        addRelation(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE,
-            instanceValue(TargetType.ResourceGroup, ctx.workload_group_group_name.getStart()), targets);
+        addRelation(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE, instanceValue(TargetType.ResourceGroup, ctx.workload_group_group_name.getStart()), targets);
         return null;
     }
 
@@ -914,22 +902,19 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.USING() != null) {
             targets.add(instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(ctx.getChildCount() - 1))));
         }
-        addRelation(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))), targets);
+        addRelation(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))), targets);
         return null;
     }
 
     @Override
     public Void visitDrop_workload_group(SqlServerParser.Drop_workload_groupContext ctx) {
-        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP,
-            instanceValue(TargetType.ResourceGroup, ctx.group_name.getStart()));
+        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP, instanceValue(TargetType.ResourceGroup, ctx.group_name.getStart()));
         return null;
     }
 
     @Override
     public Void visitAlter_resource_governor(SqlServerParser.Alter_resource_governorContext ctx) {
-        BehaviorObject governor = objects.instanceObject(TargetType.Instance,
-            ctx.RESOURCE().getSymbol(), ctx.GOVERNOR().getSymbol(), "");
+        BehaviorObject governor = objects.instanceObject(TargetType.Instance, ctx.RESOURCE().getSymbol(), ctx.GOVERNOR().getSymbol(), "");
         governor.setObjectPath(unnamed(TargetType.Instance, ctx.getStart(), UmiTypes.Instance).getObjectPath());
         governor.setObjectName(new ObjectName(null, null, null));
         BehaviorAction action = BehaviorAction.CONFIGURE;
@@ -944,8 +929,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.function_name != null) {
             String schema = unquote(ctx.schema_name.getText());
             String name = unquote(ctx.function_name.getText());
-            BehaviorObject function = objects.object(TargetType.Function, ctx.schema_name.getStart(), ctx.function_name.getStop(),
-                List.of(schema, name));
+            BehaviorObject function = objects.object(TargetType.Function, ctx.schema_name.getStart(), ctx.function_name.getStop(), List.of(schema, name));
             function.setObjectName(new ObjectName(level(UmiTypes.Catalog), schema, name));
             endPosition(function, ctx.function_name.getStop());
             targets.add(function);
@@ -959,8 +943,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         List<BehaviorObject> targets = loginOptions(ctx);
         addObject(targets, scopedName(TargetType.Certificate, ctx.certname, "master"));
         addObject(targets, scopedName(TargetType.AsymmetricKey, ctx.asym_key_name, "master"));
-        addRelation(SplitQueryType.CREATE_USER, BehaviorAction.CREATE,
-            scopedName(TargetType.User, ctx.login_name, null), targets);
+        addRelation(SplitQueryType.CREATE_USER, BehaviorAction.CREATE, scopedName(TargetType.User, ctx.login_name, null), targets);
         return null;
     }
 
@@ -976,13 +959,12 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 targets.add(scopedName(TargetType.Credential, option.id_(), null));
             }
         }
-        alterPrincipal(scopedName(TargetType.User, ctx.login_name, null), renamed,
-            ctx.alter_login_option().size(), SplitQueryType.ALTER_USER, SplitQueryType.RENAME_USER, targets);
+        alterPrincipal(scopedName(TargetType.User, ctx.login_name, null), renamed, ctx.alter_login_option().size(), SplitQueryType.ALTER_USER, SplitQueryType.RENAME_USER, targets);
         return null;
     }
 
-    private void alterPrincipal(BehaviorObject subject, BehaviorObject renamed, int optionCount,
-                                SplitQueryType alterType, SplitQueryType renameType, List<BehaviorObject> targets) {
+    private void alterPrincipal(BehaviorObject subject, BehaviorObject renamed, int optionCount, SplitQueryType alterType, SplitQueryType renameType,
+                                List<BehaviorObject> targets) {
         targets.sort(Comparator.comparingInt(BehaviorObject::getStartLine).thenComparingInt(BehaviorObject::getStartColumn));
         SplitQueryType type = alterType;
         if (renamed != null && optionCount == 1) {
@@ -1011,17 +993,14 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitCreate_user(SqlServerParser.Create_userContext ctx) {
-        List<BehaviorObject> targets = objects(scopedName(TargetType.User, ctx.login_name, null),
-            scopedName(TargetType.Certificate, ctx.cert_name, level(UmiTypes.Catalog)),
-            scopedName(TargetType.AsymmetricKey, ctx.asym_key_name, level(UmiTypes.Catalog)));
+        List<BehaviorObject> targets = objects(scopedName(TargetType.User, ctx.login_name, null), scopedName(TargetType.Certificate, ctx.cert_name, level(UmiTypes.Catalog)), scopedName(TargetType.AsymmetricKey, ctx.asym_key_name, level(UmiTypes.Catalog)));
         for (SqlServerParser.Mapped_user_optionContext option : descendants(ctx, SqlServerParser.Mapped_user_optionContext.class)) {
             addObject(targets, object(TargetType.Schema, option.schema_name));
         }
         if (ctx.DEFAULT_SCHEMA() != null) {
             targets.add(object(TargetType.Schema, ctx.id_(ctx.id_().size() - 1)));
         }
-        addRelation(SplitQueryType.CREATE_USER, BehaviorAction.CREATE,
-            scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.CREATE_USER, BehaviorAction.CREATE, scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1038,23 +1017,20 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 addObject(targets, object(TargetType.Schema, option.id_()));
             }
         }
-        alterPrincipal(scopedName(TargetType.User, ctx.username, level(UmiTypes.Catalog)), renamed,
-            ctx.alter_user_option().size(), SplitQueryType.ALTER_USER, SplitQueryType.RENAME_USER, targets);
+        alterPrincipal(scopedName(TargetType.User, ctx.username, level(UmiTypes.Catalog)), renamed, ctx.alter_user_option()
+            .size(), SplitQueryType.ALTER_USER, SplitQueryType.RENAME_USER, targets);
         return null;
     }
 
     @Override
     public Void visitCreate_server_role(SqlServerParser.Create_server_roleContext ctx) {
-        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE, scopedName(TargetType.Role, ctx.server_role, null),
-            objects(scopedName(TargetType.UserOrRole, ctx.server_principal, null)));
+        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE, scopedName(TargetType.Role, ctx.server_role, null), objects(scopedName(TargetType.UserOrRole, ctx.server_principal, null)));
         return null;
     }
 
     @Override
     public Void visitCreate_db_role(SqlServerParser.Create_db_roleContext ctx) {
-        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE,
-            scopedName(TargetType.Role, ctx.role_name, level(UmiTypes.Catalog)),
-            objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog))));
+        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE, scopedName(TargetType.Role, ctx.role_name, level(UmiTypes.Catalog)), objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog))));
         return null;
     }
 
@@ -1089,8 +1065,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.DEFAULT_SCHEMA() != null) {
             targets.add(object(TargetType.Schema, ctx.id_(1)));
         }
-        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE,
-            scopedName(TargetType.Role, ctx.application_role, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.CREATE_ROLE, BehaviorAction.CREATE, scopedName(TargetType.Role, ctx.application_role, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1105,8 +1080,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 targets.add(object(TargetType.Schema, option.id_()));
             }
         }
-        alterPrincipal(scopedName(TargetType.Role, ctx.application_role, level(UmiTypes.Catalog)), renamed,
-            ctx.application_role_option().size(), SplitQueryType.ALTER_ROLE, SplitQueryType.RENAME_ROLE, targets);
+        alterPrincipal(scopedName(TargetType.Role, ctx.application_role, level(UmiTypes.Catalog)), renamed, ctx.application_role_option()
+            .size(), SplitQueryType.ALTER_ROLE, SplitQueryType.RENAME_ROLE, targets);
         return null;
     }
 
@@ -1128,9 +1103,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         return null;
     }
 
-    private void permission(ParserRuleContext ctx, SplitQueryType type, BehaviorAction action,
-                            SqlServerParser.Permission_listContext permissions, SqlServerParser.Permission_targetContext target,
-                            List<SqlServerParser.Principal_idContext> principals, boolean grantor) {
+    private void permission(ParserRuleContext ctx, SplitQueryType type, BehaviorAction action, SqlServerParser.Permission_listContext permissions,
+                            SqlServerParser.Permission_targetContext target, List<SqlServerParser.Principal_idContext> principals, boolean grantor) {
         boolean server = false;
         BehaviorObject subject;
         if (target == null) {
@@ -1168,25 +1142,22 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
     private boolean serverPermission(SqlServerParser.Grant_permissionContext permission) {
         // These permissions have instance scope even when the word SERVER is absent.
         return switch (permission.getText().toUpperCase(Locale.ROOT)) {
-            case "ADMINISTERBULKOPERATIONS", "ALTERANYAVAILABILITYGROUP", "ALTERANYCONNECTION", "ALTERANYCREDENTIAL",
-                 "ALTERANYDATABASE", "ALTERANYENDPOINT", "ALTERANYEVENTNOTIFICATION", "ALTERANYEVENTSESSION",
-                 "ALTERANYLINKEDSERVER", "ALTERANYLOGIN", "ALTERANYSERVERAUDIT", "ALTERANYSERVERROLE",
-                 "ALTERRESOURCES", "ALTERSERVERSTATE", "ALTERSETTINGS", "ALTERTRACE", "AUTHENTICATESERVER",
-                 "CONNECTANYDATABASE", "CONNECTSQL", "CONTROLSERVER", "CREATEANYDATABASE", "CREATEAVAILABILITYGROUP",
-                 "CREATEDDLEVENTNOTIFICATION", "CREATEENDPOINT", "CREATESERVERROLE", "CREATETRACEEVENTNOTIFICATION",
-                 "EXTERNALACCESSASSEMBLY", "IMPERSONATEANYLOGIN", "SELECTALLUSERSECURABLES", "SHUTDOWN",
-                 "UNSAFEASSEMBLY", "VIEWANYDATABASE", "VIEWANYDEFINITION", "VIEWANYSECURITYDEFINITION",
-                 "VIEWANYPERFORMANCEDEFINITION", "VIEWANYCRYPTOGRAPHICALLYSECUREDDEFINITION", "VIEWSERVERSTATE",
-                 "VIEWSERVERSECURITYSTATE", "VIEWSERVERPERFORMANCESTATE" -> true;
+            case "ADMINISTERBULKOPERATIONS", "ALTERANYAVAILABILITYGROUP", "ALTERANYCONNECTION", "ALTERANYCREDENTIAL", "ALTERANYDATABASE", "ALTERANYENDPOINT",
+                    "ALTERANYEVENTNOTIFICATION", "ALTERANYEVENTSESSION", "ALTERANYLINKEDSERVER", "ALTERANYLOGIN", "ALTERANYSERVERAUDIT", "ALTERANYSERVERROLE", "ALTERRESOURCES",
+                    "ALTERSERVERSTATE", "ALTERSETTINGS", "ALTERTRACE", "AUTHENTICATESERVER", "CONNECTANYDATABASE", "CONNECTSQL", "CONTROLSERVER", "CREATEANYDATABASE",
+                    "CREATEAVAILABILITYGROUP", "CREATEDDLEVENTNOTIFICATION", "CREATEENDPOINT", "CREATESERVERROLE", "CREATETRACEEVENTNOTIFICATION", "EXTERNALACCESSASSEMBLY",
+                    "IMPERSONATEANYLOGIN", "SELECTALLUSERSECURABLES", "SHUTDOWN", "UNSAFEASSEMBLY", "VIEWANYDATABASE", "VIEWANYDEFINITION", "VIEWANYSECURITYDEFINITION",
+                    "VIEWANYPERFORMANCEDEFINITION", "VIEWANYCRYPTOGRAPHICALLYSECUREDDEFINITION", "VIEWSERVERSTATE", "VIEWSERVERSECURITYSTATE", "VIEWSERVERPERFORMANCESTATE" ->
+                true;
             default -> false;
         };
     }
 
     private boolean serverSecurable(String kind) {
         return switch (kind) {
-            case "LOGIN", "SQLLOGIN", "SERVERROLE", "CREDENTIAL", "DATABASE", "SERVER", "ENDPOINT",
-                 "AVAILABILITYGROUP", "AUDIT", "SERVERAUDIT", "SERVERAUDITSPECIFICATION", "EVENTSESSION",
-                 "CRYPTOGRAPHICPROVIDER", "RESOURCEGOVERNOR", "EXTERNALRESOURCEPOOL", "TRIGGERSERVER" -> true;
+            case "LOGIN", "SQLLOGIN", "SERVERROLE", "CREDENTIAL", "DATABASE", "SERVER", "ENDPOINT", "AVAILABILITYGROUP", "AUDIT", "SERVERAUDIT", "SERVERAUDITSPECIFICATION",
+                    "EVENTSESSION", "CRYPTOGRAPHICPROVIDER", "RESOURCEGOVERNOR", "EXTERNALRESOURCEPOOL", "TRIGGERSERVER" ->
+                true;
             default -> false;
         };
     }
@@ -1293,8 +1264,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitAlter_security_policy(SqlServerParser.Alter_security_policyContext ctx) {
-        addRelation(SplitQueryType.ALTER_POLICY, BehaviorAction.ALTER,
-            qualifiedName(TargetType.RowAccessPolicy, ctx.schema_name, ctx.security_policy_name), policyDependencies(ctx));
+        addRelation(SplitQueryType.ALTER_POLICY, BehaviorAction.ALTER, qualifiedName(TargetType.RowAccessPolicy, ctx.schema_name, ctx.security_policy_name), policyDependencies(ctx));
         return null;
     }
 
@@ -1305,15 +1275,13 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             targets.add(instanceValue(TargetType.File, ctx.existing_keys().path_to_file));
         }
         targets.addAll(privateKeyFiles(ctx));
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
     @Override
     public Void visitAlter_certificate(SqlServerParser.Alter_certificateContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)), privateKeyFiles(ctx));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)), privateKeyFiles(ctx));
         return null;
     }
 
@@ -1333,8 +1301,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         addRelation(SplitQueryType.ADMIN, BehaviorAction.EXPORT, instanceValue(TargetType.File, ctx.cert_file), objects(certificate));
         for (SqlServerParser.Certificate_backup_optionContext option : ctx.certificate_backup_option()) {
             if (option.FILE() != null) {
-                addRelation(SplitQueryType.ADMIN, BehaviorAction.EXPORT,
-                    instanceValue(TargetType.File, option.STRING().getSymbol()), objects(certificate));
+                addRelation(SplitQueryType.ADMIN, BehaviorAction.EXPORT, instanceValue(TargetType.File, option.STRING().getSymbol()), objects(certificate));
             }
         }
         return null;
@@ -1346,8 +1313,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.FILE() != null) {
             targets.add(instanceValue(TargetType.File, ctx.STRING(0).getSymbol()));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.AsymmetricKey, ctx.Asym_Key_Nam, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.AsymmetricKey, ctx.Asym_Key_Nam, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1355,15 +1321,13 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
     public Void visitCreate_key(SqlServerParser.Create_keyContext ctx) {
         List<BehaviorObject> targets = objects(scopedName(TargetType.UserOrRole, ctx.user_name, level(UmiTypes.Catalog)));
         targets.addAll(keyProtectors(ctx));
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.SymmetricKey, ctx.key_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.SymmetricKey, ctx.key_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
     @Override
     public Void visitAlter_symmetric_key(SqlServerParser.Alter_symmetric_keyContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.SymmetricKey, ctx.key_name, level(UmiTypes.Catalog)), keyProtectors(ctx));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.SymmetricKey, ctx.key_name, level(UmiTypes.Catalog)), keyProtectors(ctx));
         return null;
     }
 
@@ -1414,8 +1378,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.SERVICE() != null) {
             targets.add(unnamedRange(TargetType.ServiceMasterKey, ctx.SERVICE().getSymbol(), ctx.KEY(1).getSymbol(), UmiTypes.Instance));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER(0).getSymbol(), ctx.KEY(0).getSymbol(), UmiTypes.Catalog), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER(0).getSymbol(), ctx.KEY(0)
+            .getSymbol(), UmiTypes.Catalog), targets);
         return null;
     }
 
@@ -1425,9 +1389,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.ASYMMETRIC() != null) {
             protector = TargetType.AsymmetricKey;
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY(0).getSymbol(), UmiTypes.Catalog),
-            objects(scopedName(protector, ctx.id_(), "master")));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY(0)
+            .getSymbol(), UmiTypes.Catalog), objects(scopedName(protector, ctx.id_(), "master")));
         return null;
     }
 
@@ -1437,9 +1400,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.ASYMMETRIC() != null) {
             protector = TargetType.AsymmetricKey;
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY(0).getSymbol(), UmiTypes.Catalog),
-            objects(scopedName(protector, ctx.id_(), "master")));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY(0)
+            .getSymbol(), UmiTypes.Catalog), objects(scopedName(protector, ctx.id_(), "master")));
         return null;
     }
 
@@ -1449,8 +1411,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         for (SqlServerParser.Column_encryption_key_valueContext value : ctx.column_encryption_key_value()) {
             targets.add(scopedName(TargetType.ColumnMasterKey, value.id_(), level(UmiTypes.Catalog)));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.ColumnEncryptionKey, ctx.column_encryption_key, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.ColumnEncryptionKey, ctx.column_encryption_key, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1460,9 +1421,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.column_encryption_key_value() != null) {
             protector = ctx.column_encryption_key_value().id_();
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.ColumnEncryptionKey, ctx.column_encryption_key, level(UmiTypes.Catalog)),
-            objects(scopedName(TargetType.ColumnMasterKey, protector, level(UmiTypes.Catalog))));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.ColumnEncryptionKey, ctx.column_encryption_key, level(UmiTypes.Catalog)), objects(scopedName(TargetType.ColumnMasterKey, protector, level(UmiTypes.Catalog))));
         return null;
     }
 
@@ -1476,8 +1435,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             }
             targets.add(scopedName(type, source.id_(), level(UmiTypes.Catalog)));
         }
-        addRelation(SplitQueryType.ADMIN_PROG_OBJ, BehaviorAction.ALTER,
-            qualifiedName(TargetType.ProgramObject, ctx.schema_name, ctx.module_name), targets);
+        addRelation(SplitQueryType.ADMIN_PROG_OBJ, BehaviorAction.ALTER, qualifiedName(TargetType.ProgramObject, ctx.schema_name, ctx.module_name), targets);
         return null;
     }
 
@@ -1496,162 +1454,139 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 targets.add(scopedName(type, name, level(UmiTypes.Catalog)));
             }
         }
-        addRelation(SplitQueryType.ADMIN_PROG_OBJ, BehaviorAction.ALTER,
-            qualifiedName(TargetType.ProgramObject, ctx.schema_name, ctx.module_name), targets);
+        addRelation(SplitQueryType.ADMIN_PROG_OBJ, BehaviorAction.ALTER, qualifiedName(TargetType.ProgramObject, ctx.schema_name, ctx.module_name), targets);
         return null;
     }
 
     @Override
     public Void visitDrop_login(SqlServerParser.Drop_loginContext ctx) {
-        addUnary(SplitQueryType.DROP_USER, BehaviorAction.DROP,
-            scopedName(TargetType.User, ctx.login_name, null));
+        addUnary(SplitQueryType.DROP_USER, BehaviorAction.DROP, scopedName(TargetType.User, ctx.login_name, null));
         return null;
     }
 
     @Override
     public Void visitDrop_user(SqlServerParser.Drop_userContext ctx) {
-        addUnary(SplitQueryType.DROP_USER, BehaviorAction.DROP,
-            scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.DROP_USER, BehaviorAction.DROP, scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_server_role(SqlServerParser.Drop_server_roleContext ctx) {
-        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP,
-            scopedName(TargetType.Role, ctx.role_name, null));
+        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP, scopedName(TargetType.Role, ctx.role_name, null));
         return null;
     }
 
     @Override
     public Void visitDrop_db_role(SqlServerParser.Drop_db_roleContext ctx) {
-        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP,
-            scopedName(TargetType.Role, ctx.role_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP, scopedName(TargetType.Role, ctx.role_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_application_role(SqlServerParser.Drop_application_roleContext ctx) {
-        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP,
-            scopedName(TargetType.Role, ctx.rolename, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.DROP_ROLE, BehaviorAction.DROP, scopedName(TargetType.Role, ctx.rolename, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_certificate(SqlServerParser.Drop_certificateContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.Certificate, ctx.certificate_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_asymmetric_key(SqlServerParser.Drop_asymmetric_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.AsymmetricKey, ctx.key_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.AsymmetricKey, ctx.key_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitAlter_asymmetric_key(SqlServerParser.Alter_asymmetric_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.AsymmetricKey, ctx.Asym_Key_Name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.AsymmetricKey, ctx.Asym_Key_Name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_symmetric_key(SqlServerParser.Drop_symmetric_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.SymmetricKey, ctx.symmetric_key_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.SymmetricKey, ctx.symmetric_key_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitCreate_column_master_key(SqlServerParser.Create_column_master_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.ColumnMasterKey, ctx.key_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.ColumnMasterKey, ctx.key_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_column_master_key(SqlServerParser.Drop_column_master_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.ColumnMasterKey, ctx.key_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.ColumnMasterKey, ctx.key_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_column_encryption_key(SqlServerParser.Drop_column_encryption_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.ColumnEncryptionKey, ctx.key_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.ColumnEncryptionKey, ctx.key_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitCreate_credential(SqlServerParser.Create_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.Credential, ctx.credential_name, null));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.Credential, ctx.credential_name, null));
         return null;
     }
 
     @Override
     public Void visitAlter_credential(SqlServerParser.Alter_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.Credential, ctx.credential_name, null));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.Credential, ctx.credential_name, null));
         return null;
     }
 
     @Override
     public Void visitDrop_credential(SqlServerParser.Drop_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.Credential, ctx.credential_name, null));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.Credential, ctx.credential_name, null));
         return null;
     }
 
     @Override
     public Void visitCreate_database_scoped_credential(SqlServerParser.Create_database_scoped_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitAlter_database_scoped_credential(SqlServerParser.Alter_database_scoped_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitDrop_database_scoped_credential(SqlServerParser.Drop_database_scoped_credentialContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, scopedName(TargetType.Credential, ctx.credential_name, level(UmiTypes.Catalog)));
         return null;
     }
 
     @Override
     public Void visitCreate_master_key_sql_server(SqlServerParser.Create_master_key_sql_serverContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.CREATE, unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
         return null;
     }
 
     @Override
     public Void visitDrop_master_key(SqlServerParser.Drop_master_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, unnamedRange(TargetType.DatabaseMasterKey, ctx.MASTER().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
         return null;
     }
 
     @Override
     public Void visitAlter_service_master_key(SqlServerParser.Alter_service_master_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            unnamedRange(TargetType.ServiceMasterKey, ctx.SERVICE().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Instance));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.ALTER, unnamedRange(TargetType.ServiceMasterKey, ctx.SERVICE().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Instance));
         return null;
     }
 
     @Override
     public Void visitDrop_database_encryption_key(SqlServerParser.Drop_database_encryption_keyContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP,
-            unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.DROP, unnamedRange(TargetType.DatabaseEncryptionKey, ctx.DATABASE().getSymbol(), ctx.KEY().getSymbol(), UmiTypes.Catalog));
         return null;
     }
 
@@ -1730,15 +1665,13 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitCreate_server_audit_specification(SqlServerParser.Create_server_audit_specificationContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, null),
-            objects(scopedName(TargetType.Audit, ctx.audit_name, null)));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, null), objects(scopedName(TargetType.Audit, ctx.audit_name, null)));
         return null;
     }
 
     @Override
     public Void visitAlter_server_audit_specification(SqlServerParser.Alter_server_audit_specificationContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, null),
-            objects(scopedName(TargetType.Audit, ctx.audit_name, null)));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, null), objects(scopedName(TargetType.Audit, ctx.audit_name, null)));
         return null;
     }
 
@@ -1746,8 +1679,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
     public Void visitCreate_database_audit_specification(SqlServerParser.Create_database_audit_specificationContext ctx) {
         List<BehaviorObject> targets = objects(scopedName(TargetType.Audit, ctx.audit_name, null));
         targets.addAll(auditDependencies(ctx));
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1755,8 +1687,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
     public Void visitAlter_database_audit_specification(SqlServerParser.Alter_database_audit_specificationContext ctx) {
         List<BehaviorObject> targets = objects(scopedName(TargetType.Audit, ctx.audit_name, null));
         targets.addAll(auditDependencies(ctx));
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.AuditSpecification, ctx.audit_specification_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -1792,8 +1723,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         List<BehaviorObject> targets = new ArrayList<>();
         for (SqlServerParser.Xe_add_targetContext target : descendants(ctx, SqlServerParser.Xe_add_targetContext.class)) {
             List<String> name = names(target.xe_object_name());
-            if (name.size() < 2 || !"package0".equalsIgnoreCase(name.get(name.size() - 2))
-                || !"event_file".equalsIgnoreCase(name.get(name.size() - 1))) {
+            if (name.size() < 2 || !"package0".equalsIgnoreCase(name.get(name.size() - 2)) || !"event_file".equalsIgnoreCase(name.get(name.size() - 1))) {
                 continue;
             }
             for (SqlServerParser.Xe_parameterContext parameter : target.xe_parameter()) {
@@ -1836,8 +1766,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             if (option.DENY() != null) {
                 action = BehaviorAction.DENY;
             }
-            addRelation(SplitQueryType.ADMIN, action,
-                unnamedRange(TargetType.Instance, option.CREATE().getSymbol(), option.DATABASE().getSymbol(), UmiTypes.Instance), objects(group));
+            addRelation(SplitQueryType.ADMIN, action, unnamedRange(TargetType.Instance, option.CREATE().getSymbol(), option.DATABASE()
+                .getSymbol(), UmiTypes.Instance), objects(group));
             return null;
         }
         BehaviorAction action = BehaviorAction.ALTER;
@@ -1909,16 +1839,13 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             }
             targets.add(qualifiedName(TargetType.XmlSchemaCollection, schema, ids.get(nameIndex)));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.BrokerMessageType, ctx.message_type_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.BrokerMessageType, ctx.message_type_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
     @Override
     public Void visitAlter_message_type(SqlServerParser.Alter_message_typeContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.BrokerMessageType, ctx.message_type_name, level(UmiTypes.Catalog)),
-            objects(object(TargetType.XmlSchemaCollection, ctx.schema_collection_name)));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.BrokerMessageType, ctx.message_type_name, level(UmiTypes.Catalog)), objects(object(TargetType.XmlSchemaCollection, ctx.schema_collection_name)));
         return null;
     }
 
@@ -1932,8 +1859,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                 targets.add(catalogValue(TargetType.BrokerMessageType, terminal.getSymbol()));
             }
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.BrokerContract, ctx.contract_name(), level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.BrokerContract, ctx.contract_name(), level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -2001,18 +1927,16 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitCreate_service(SqlServerParser.Create_serviceContext ctx) {
-        List<BehaviorObject> targets = objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog)),
-            qualifiedName(TargetType.Queue, ctx.schema_name, ctx.queue_name));
+        List<BehaviorObject> targets = objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog)), qualifiedName(TargetType.Queue, ctx.schema_name, ctx.queue_name));
         for (ParseTree child : ctx.children) {
-            if (child instanceof SqlServerParser.Id_Context name && name != ctx.create_service_name && name != ctx.owner_name
-                && name != ctx.schema_name && name != ctx.queue_name) {
+            if (child instanceof SqlServerParser.Id_Context name && name != ctx.create_service_name && name != ctx.owner_name && name != ctx.schema_name
+                && name != ctx.queue_name) {
                 targets.add(scopedName(TargetType.BrokerContract, name, level(UmiTypes.Catalog)));
             } else if (child instanceof TerminalNode terminal && terminal.getSymbol().getType() == SqlServerParser.DEFAULT) {
                 targets.add(catalogValue(TargetType.BrokerContract, terminal.getSymbol()));
             }
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.BrokerService, ctx.create_service_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.BrokerService, ctx.create_service_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -2025,33 +1949,25 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         for (SqlServerParser.Opt_arg_clauseContext option : ctx.opt_arg_clause()) {
             targets.add(scopedName(TargetType.BrokerContract, option.modified_contract_name, level(UmiTypes.Catalog)));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.BrokerService, ctx.modified_service_name, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.BrokerService, ctx.modified_service_name, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
     @Override
     public Void visitCreate_route(SqlServerParser.Create_routeContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.BrokerRoute, ctx.route_name, level(UmiTypes.Catalog)),
-            objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog))));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.BrokerRoute, ctx.route_name, level(UmiTypes.Catalog)), objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog))));
         return null;
     }
 
     @Override
     public Void visitCreate_remote_service_binding(SqlServerParser.Create_remote_service_bindingContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            scopedName(TargetType.RemoteServiceBinding, ctx.binding_name, level(UmiTypes.Catalog)),
-            objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog)),
-                scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog))));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, scopedName(TargetType.RemoteServiceBinding, ctx.binding_name, level(UmiTypes.Catalog)), objects(scopedName(TargetType.UserOrRole, ctx.owner_name, level(UmiTypes.Catalog)), scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog))));
         return null;
     }
 
     @Override
     public Void visitAlter_remote_service_binding(SqlServerParser.Alter_remote_service_bindingContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER,
-            scopedName(TargetType.RemoteServiceBinding, ctx.binding_name, level(UmiTypes.Catalog)),
-            objects(scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog))));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.ALTER, scopedName(TargetType.RemoteServiceBinding, ctx.binding_name, level(UmiTypes.Catalog)), objects(scopedName(TargetType.User, ctx.user_name, level(UmiTypes.Catalog))));
         return null;
     }
 
@@ -2065,7 +1981,8 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
                     case SqlServerParser.CONTRACT_NAME -> type = TargetType.BrokerContract;
                     case SqlServerParser.LOCAL_SERVICE_NAME -> type = TargetType.BrokerService;
                     case SqlServerParser.REMOTE_SERVICE_NAME, SqlServerParser.PRIORITY_LEVEL -> type = null;
-                    default -> { }
+                    default -> {
+                    }
                 }
             } else if (type != null && child instanceof SqlServerParser.Id_Context name) {
                 targets.add(scopedName(type, name, level(UmiTypes.Catalog)));
@@ -2075,8 +1992,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if (ctx.CREATE() != null) {
             action = BehaviorAction.CREATE;
         }
-        addRelation(SplitQueryType.ADMIN, action,
-            scopedName(TargetType.BrokerPriority, ctx.ConversationPriorityName, level(UmiTypes.Catalog)), targets);
+        addRelation(SplitQueryType.ADMIN, action, scopedName(TargetType.BrokerPriority, ctx.ConversationPriorityName, level(UmiTypes.Catalog)), targets);
         return null;
     }
 
@@ -2087,8 +2003,7 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
         if ("current database".equalsIgnoreCase(unquote(ctx.STRING(1).getText()))) {
             targets.add(catalogValue(TargetType.BrokerService, ctx.STRING(0).getSymbol()));
         }
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE,
-            notification(ctx.event_notification_name, ctx.SERVER() != null, queue), targets);
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.CREATE, notification(ctx.event_notification_name, ctx.SERVER() != null, queue), targets);
         return null;
     }
 
@@ -2126,16 +2041,14 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitBegin_conversation_timer(SqlServerParser.Begin_conversation_timerContext ctx) {
-        addUnary(SplitQueryType.ADMIN, BehaviorAction.CONFIGURE,
-            unnamed(TargetType.BrokerConversation, ctx.LOCAL_ID().getSymbol(), UmiTypes.Catalog));
+        addUnary(SplitQueryType.ADMIN, BehaviorAction.CONFIGURE, unnamed(TargetType.BrokerConversation, ctx.LOCAL_ID().getSymbol(), UmiTypes.Catalog));
         return null;
     }
 
     @Override
     public Void visitMove_conversation(SqlServerParser.Move_conversationContext ctx) {
-        addRelation(SplitQueryType.ADMIN, BehaviorAction.MOVE,
-            unnamed(TargetType.BrokerConversation, ctx.LOCAL_ID(0).getSymbol(), UmiTypes.Catalog),
-            objects(unnamed(TargetType.BrokerConversationGroup, ctx.LOCAL_ID(1).getSymbol(), UmiTypes.Catalog)));
+        addRelation(SplitQueryType.ADMIN, BehaviorAction.MOVE, unnamed(TargetType.BrokerConversation, ctx.LOCAL_ID(0)
+            .getSymbol(), UmiTypes.Catalog), objects(unnamed(TargetType.BrokerConversationGroup, ctx.LOCAL_ID(1).getSymbol(), UmiTypes.Catalog)));
         return null;
     }
 
@@ -2296,43 +2209,65 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
 
     @Override
     public Void visitCreate_resource_pool(SqlServerParser.Create_resource_poolContext ctx) {
-        addUnary(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
+        addUnary(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
         return null;
     }
 
     @Override
     public Void visitAlter_resource_pool(SqlServerParser.Alter_resource_poolContext ctx) {
-        addUnary(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
+        addUnary(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
         return null;
     }
 
     @Override
     public Void visitDrop_resource_pool(SqlServerParser.Drop_resource_poolContext ctx) {
-        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
+        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(3))));
         return null;
     }
 
     @Override
     public Void visitCreate_external_resource_pool(SqlServerParser.Create_external_resource_poolContext ctx) {
-        addUnary(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
+        addUnary(SplitQueryType.CREATE_RESOURCE_GROUP, BehaviorAction.CREATE, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
         return null;
     }
 
     @Override
     public Void visitAlter_external_resource_pool(SqlServerParser.Alter_external_resource_poolContext ctx) {
-        addUnary(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
+        addUnary(SplitQueryType.ALTER_RESOURCE_GROUP, BehaviorAction.ALTER, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
         return null;
     }
 
     @Override
     public Void visitDrop_external_resource_pool(SqlServerParser.Drop_external_resource_poolContext ctx) {
-        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP,
-            instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
+        addUnary(SplitQueryType.DROP_RESOURCE_GROUP, BehaviorAction.DROP, instanceValue(TargetType.ResourceGroup, startToken(ctx.getChild(4))));
+        return null;
+    }
+
+    private boolean executesFunction(ParseTree tree) {
+        if (!executing) {
+            return false;
+        }
+        for (ParseTree parent = tree.getParent(); parent != null; parent = parent.getParent()) {
+            if (parent instanceof SqlServerParser.Create_or_alter_functionContext || parent instanceof SqlServerParser.Create_or_alter_procedureContext
+                || parent instanceof SqlServerParser.Create_or_alter_triggerContext || parent instanceof SqlServerParser.Create_viewContext) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public Void visitRowset_function(SqlServerParser.Rowset_functionContext ctx) {
+        BehaviorObject function = instanceNamed(TargetType.Function, ctx.getStart(), "OPENROWSET");
+        if (!executesFunction(ctx)) {
+            addUnary(SplitQueryType.SELECT, BehaviorAction.CALL, function);
+            return null;
+        }
+        int start = behavior.getRelations().size();
+        objects.applyFunctionBehavior(behavior, function, MsSqlResourceRegistry.instance().functionBehavior("OPENROWSET", null), ctx);
+        if (ctx.data_file != null) {
+            behavior.getRelations().get(start + 1).setSubject(instanceNamed(TargetType.File, ctx.data_file, unquote(ctx.data_file.getText())));
+        }
         return null;
     }
 
@@ -2345,7 +2280,24 @@ final class MsStatementBehaviorVisitor extends SqlServerParserBaseVisitor<Void> 
             // CAST/CONVERT are real built-in calls; grammar keywords such as CASE are not function_call nodes.
             function = instanceNamed(TargetType.Function, token, token.getText().toUpperCase(Locale.ROOT));
         }
-        addUnary(SplitQueryType.SELECT, BehaviorAction.CALL, function);
+        if (!executesFunction(ctx)) {
+            addUnary(SplitQueryType.SELECT, BehaviorAction.CALL, function);
+            return;
+        }
+        if (behavior.getStatementType() == SplitQueryType.UNKNOWN) {
+            behavior.setStatementType(SplitQueryType.SELECT);
+        }
+        String name = ctx.getStart().getText();
+        if (ctx instanceof SqlServerParser.SCALAR_FUNCTIONContext scalar) {
+            name = scalar.scalar_function_name().getText();
+        }
+        int start = behavior.getRelations().size();
+        var classification = MsSqlResourceRegistry.instance().functionBehavior(name, null);
+        objects.applyFunctionBehavior(behavior, function, classification, ctx);
+        var session = first(ctx, SqlServerParser.SESSION_CONTEXTContext.class);
+        if (session != null && classification.targetType() == TargetType.ConfigKey) {
+            behavior.getRelations().get(start + 1).setSubject(instanceNamed(TargetType.ConfigKey, session.key, unquote(session.key.getText())));
+        }
     }
 
     private BehaviorObject identity(Token token, boolean databaseScope, String name) {

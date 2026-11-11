@@ -1,5 +1,5 @@
 <script>
-import * as monaco from 'monaco-editor';
+import { monaco } from '@/components/editor/monaco';
 import { markRaw } from 'vue';
 import { mapState } from 'vuex';
 import { resolveSqlEditorLanguage } from './sqlLanguage';
@@ -85,7 +85,6 @@ export default {
               renderSideBySideInlineBreakpoint: 0, // never collapse to inline view because of width
               useInlineViewWhenSpaceIsLimited: false, // keep two panes even on narrow screens
               readOnly: true,
-              theme: 'vs', // Editor theme: vs, hc-black, or vs-dark; more options in the official docs.
               minimap: {
                 enabled: false
               },
@@ -123,7 +122,7 @@ export default {
       <div class="flex-1 font-bold">{{ $t('xiu-gai-qian') }}</div>
       <div class="flex-1 font-bold">{{ $t('xiu-gai-hou') }}</div>
     </div>
-    <div class="read-only-editor" ref="readOnlyEditor" :style="`height: 400px; border: ${borderStyle};`"></div>
+    <div class="read-only-editor sql-editor-typography" ref="readOnlyEditor" :style="`height: 400px; border: ${borderStyle};`"></div>
   </div>
 </template>
 

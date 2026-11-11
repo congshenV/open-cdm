@@ -3,6 +3,15 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.sql.oracle.analysis.behavior;
 
@@ -18,8 +27,10 @@ import com.clougence.clouddm.sdk.sql.analysis.behavior.*;
 import com.clougence.clouddm.sdk.sql.parser.SplitQueryType;
 import com.clougence.schema.umi.struts.UmiTypes;
 import com.clougence.sql.common.analysis.behavior.RdbBehaviorObjectFactory;
-import com.clougence.sql.oracle.parser.antlr.PlSqlParserBaseVisitor;
+import com.clougence.sql.common.registry.FunctionBehavior;
+import com.clougence.sql.oracle.analysis.reference.OraResourceRegistry;
 import com.clougence.sql.oracle.parser.antlr.PlSqlParser;
+import com.clougence.sql.oracle.parser.antlr.PlSqlParserBaseVisitor;
 import com.clougence.sql.oracle.parser.antlr.PlSqlParser.*;
 import com.clougence.utils.StringUtils;
 
@@ -46,6 +57,7 @@ final class OraBehaviorParserVisitor extends AbstractParseTreeVisitor<Void> {
     public Void visit(ParseTree tree) {
         OraStatementBehaviorVisitor visitor = new OraStatementBehaviorVisitor(parser, levels, baseLine, baseColumn);
         visitor.visit(tree);
+        visitor.scanFunctionCalls(tree);
         behaviors.add(visitor.behavior());
         return null;
     }
@@ -71,24 +83,19 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
     public Void visitAlter_system(Alter_systemContext ctx) {
         if (!ctx.alter_system_set_clause().isEmpty()) {
             for (Alter_system_set_clauseContext setting : ctx.alter_system_set_clause()) {
-                addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.CONFIGURE,
-                    principal(TargetType.ConfigKey, setting.system_parameter_name()));
+                addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.CONFIGURE, principal(TargetType.ConfigKey, setting.system_parameter_name()));
             }
         } else if (!ctx.alter_system_reset_clause().isEmpty()) {
             for (Alter_system_reset_clauseContext setting : ctx.alter_system_reset_clause()) {
-                addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.RESET,
-                    principal(TargetType.ConfigKey, setting.system_parameter_name()));
+                addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.RESET, principal(TargetType.ConfigKey, setting.system_parameter_name()));
             }
         } else if (ctx.alter_system_security_clause() != null) {
             // Wallet passwords and key material must not become resource names.
-            addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.CONFIGURE,
-                objects.instanceObject(TargetType.ConfigKey, ctx.alter_system_security_clause()));
+            addUnary(SplitQueryType.SYSTEM_SETTING_WRITE, BehaviorAction.CONFIGURE, objects.instanceObject(TargetType.ConfigKey, ctx.alter_system_security_clause()));
         } else if (ctx.archive_log_clause() != null) {
-            addUnary(SplitQueryType.MAINTAIN_LOG, BehaviorAction.EXPORT,
-                objects.instanceObject(TargetType.Log, ctx.archive_log_clause()));
+            addUnary(SplitQueryType.MAINTAIN_LOG, BehaviorAction.EXPORT, objects.instanceObject(TargetType.Log, ctx.archive_log_clause()));
         } else if (ctx.SWITCH() != null) {
-            addUnary(SplitQueryType.MAINTAIN_LOG, BehaviorAction.SWITCH,
-                objects.instanceObject(TargetType.Log, ctx.LOGFILE().getSymbol()));
+            addUnary(SplitQueryType.MAINTAIN_LOG, BehaviorAction.SWITCH, objects.instanceObject(TargetType.Log, ctx.LOGFILE().getSymbol()));
         } else if (ctx.alter_system_flush_clause() != null) {
             systemFlush(ctx.alter_system_flush_clause());
         } else if (ctx.affinity_clauses() != null) {
@@ -101,9 +108,8 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
 
     private void systemFlush(Alter_system_flush_clauseContext ctx) {
         if (ctx.REDO() != null) {
-            addRelation(SplitQueryType.ADMIN_REPLICATION, BehaviorAction.FLUSH,
-                objects.instanceObject(TargetType.Log, ctx.REDO().getSymbol()),
-                objects(object(TargetType.Catalog, ctx.id_expression())));
+            addRelation(SplitQueryType.ADMIN_REPLICATION, BehaviorAction.FLUSH, objects
+                .instanceObject(TargetType.Log, ctx.REDO().getSymbol()), objects(object(TargetType.Catalog, ctx.id_expression())));
             return;
         }
         SplitQueryType type = SplitQueryType.ADMIN_PERFORMANCE;
@@ -162,17 +168,14 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
     public Void visitAlter_session(Alter_sessionContext ctx) {
         if (ctx.CLOSE() != null) {
             // Dots belong to the link name, not to a schema qualification.
-            addUnary(SplitQueryType.ADMIN, BehaviorAction.STOP,
-                objects.object(TargetType.Link, ctx.link_name(), List.of(ctx.link_name().getText())));
+            addUnary(SplitQueryType.ADMIN, BehaviorAction.STOP, objects.object(TargetType.Link, ctx.link_name(), List.of(ctx.link_name().getText())));
         } else if (ctx.SYNC() != null) {
             // Waits for active standby redo apply; does not start replication.
-            addUnary(SplitQueryType.ADMIN, BehaviorAction.APPLY,
-                objects.unnamedObject(TargetType.Catalog, ctx.SYNC().getSymbol(), UmiTypes.Catalog));
+            addUnary(SplitQueryType.ADMIN, BehaviorAction.APPLY, objects.unnamedObject(TargetType.Catalog, ctx.SYNC().getSymbol(), UmiTypes.Catalog));
         } else if (ctx.alter_session_set_clause() != null) {
             sessionSettings(ctx.alter_session_set_clause());
         } else {
-            addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE,
-                objects.instanceObject(TargetType.ConfigKey, ctx));
+            addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, objects.instanceObject(TargetType.ConfigKey, ctx));
         }
         return null;
     }
@@ -193,16 +196,14 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
                 end = ctx.VISIBILITY();
                 name = "ROW ARCHIVAL VISIBILITY";
             }
-            addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE,
-                objects.instanceObject(TargetType.ConfigKey, ctx.start, end.getSymbol(), name));
+            addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, objects.instanceObject(TargetType.ConfigKey, ctx.start, end.getSymbol(), name));
         } else {
             boolean switchesSchema = false;
             for (int i = 0; i < ctx.parameter_name().size(); i++) {
                 Parameter_nameContext parameter = ctx.parameter_name(i);
                 if ("CURRENT_SCHEMA".equalsIgnoreCase(parameter.getText())) {
                     switchesSchema = true;
-                    addUnary(SplitQueryType.SWITCH_SCHEMA, BehaviorAction.SWITCH,
-                        object(TargetType.Schema, ctx.session_parameter_value(i)));
+                    addUnary(SplitQueryType.SWITCH_SCHEMA, BehaviorAction.SWITCH, object(TargetType.Schema, ctx.session_parameter_value(i)));
                 } else {
                     addUnary(SplitQueryType.SESSION_SETTING_WRITE, BehaviorAction.CONFIGURE, principal(TargetType.ConfigKey, parameter));
                 }
@@ -226,8 +227,7 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
                 }
             }
             // ALL/NONE are unnamed sets; EXCEPT roles are filters, not enabled subjects.
-            addRelation(SplitQueryType.SWITCH_ROLE, BehaviorAction.SWITCH,
-                objects.instanceObject(TargetType.Role, ctx.ROLE().getSymbol()), references);
+            addRelation(SplitQueryType.SWITCH_ROLE, BehaviorAction.SWITCH, objects.instanceObject(TargetType.Role, ctx.ROLE().getSymbol()), references);
         } else {
             for (Role_nameContext role : ctx.role_name()) {
                 addUnary(SplitQueryType.SWITCH_ROLE, BehaviorAction.SWITCH, principal(TargetType.Role, role));
@@ -311,8 +311,7 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
 
     @Override
     public Void visitCreate_tablespace(Create_tablespaceContext ctx) {
-        addRelation(SplitQueryType.CREATE_TABLESPACE, BehaviorAction.CREATE,
-            catalogObject(TargetType.Tablespace, first(ctx, Id_expressionContext.class)), tablespaceGroups(ctx));
+        addRelation(SplitQueryType.CREATE_TABLESPACE, BehaviorAction.CREATE, catalogObject(TargetType.Tablespace, first(ctx, Id_expressionContext.class)), tablespaceGroups(ctx));
         return null;
     }
 
@@ -879,6 +878,101 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
         return visitChildren(ctx);
     }
 
+    private boolean executesFunction(ParseTree tree) {
+        for (ParseTree parent = tree.getParent(); parent != null; parent = parent.getParent()) {
+            if (parent instanceof Create_viewContext
+                || parent instanceof Create_materialized_viewContext view && view.build_clause() != null && view.build_clause().DEFERRED() != null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void scanFunctionCalls(ParseTree tree) {
+        if (!descendants(tree, Explain_statementContext.class).isEmpty()) {
+            return;
+        }
+
+        if (behavior.getStatementType() == SplitQueryType.CREATE_PROG_OBJ || behavior.getStatementType() == SplitQueryType.ALTER_PROG_OBJ) {
+            return;
+        }
+
+        for (Function_callContext ctx : descendants(tree, Function_callContext.class)) {
+            if (ctx.function_argument().isEmpty()) {
+                continue;
+            }
+
+            ParserRuleContext name = ctx.routine_name();
+            if (name == null) {
+                name = ctx.id_expression();
+            }
+
+            recordFunctionCall(name);
+        }
+
+        for (General_element_partContext ctx : descendants(tree, General_element_partContext.class)) {
+            if (!ctx.function_argument().isEmpty() && ctx.getParent() instanceof General_elementContext parent && parent.general_element_part().size() == 1) {
+                ParserRuleContext name = ctx.routine_name();
+                if (name == null) {
+                    name = ctx.id_expression();
+                }
+
+                recordFunctionCall(name);
+            }
+        }
+
+        for (Standard_functionContext ctx : descendants(tree, Standard_functionContext.class)) {
+            if (ctx.other_function() != null && (ctx.other_function().cursor_name() != null || ctx.other_function().TIME() != null)) {
+                continue;
+            }
+            var token = ctx.getStart();
+            BehaviorObject function = objects.object(TargetType.Function, token, List.of(token.getText().toUpperCase(Locale.ROOT)));
+            FunctionBehavior classification = FunctionBehavior.DEFAULT;
+            if (executesFunction(ctx)) {
+                classification = OraResourceRegistry.instance().functionBehavior(token.getText(), null);
+            }
+            objects.applyFunctionBehavior(behavior, function, classification, ctx);
+        }
+    }
+
+    private void recordFunctionCall(ParserRuleContext name) {
+        BehaviorObject function = object(TargetType.Function, name);
+        boolean alreadyRecorded = behavior.getRelations()
+            .stream()
+            .anyMatch(existing -> existing.getSubject().getObjectType() == TargetType.Function && existing.getSubject().getStartLine() == function.getStartLine()
+                                  && existing.getSubject().getStartColumn() == function.getStartColumn());
+        if (alreadyRecorded) {
+            return;
+        }
+
+        FunctionBehavior classification = FunctionBehavior.DEFAULT;
+        if (executesFunction(name)) {
+            classification = OraResourceRegistry.instance().functionBehavior(name.getText(), null);
+        }
+        int start = behavior.getRelations().size();
+        objects.applyFunctionBehavior(behavior, function, classification, name);
+        List<Function_argumentContext> arguments = List.of();
+        if (name.getParent() instanceof Function_callContext call) {
+            arguments = call.function_argument();
+        } else if (name.getParent() instanceof General_element_partContext part) {
+            arguments = part.function_argument();
+        }
+        if (classification.targetType() == TargetType.ConfigKey && !arguments.isEmpty() && arguments.get(0).argument().size() > 1) {
+            var namespace = arguments.get(0).argument(0).expression();
+            var parameter = arguments.get(0).argument(1).expression();
+            String namespaceText = namespace.getText();
+            String parameterText = parameter.getText();
+            if (namespace.getStart() == namespace.getStop() && parameter.getStart() == parameter.getStop() && namespaceText.startsWith("'") && parameterText.startsWith("'")
+                && !namespaceText.contains("\\") && !parameterText.contains("\\")) {
+                String key = namespaceText.substring(1, namespaceText.length() - 1).replace("''", "'") + "."
+                             + parameterText.substring(1, parameterText.length() - 1).replace("''", "'");
+                BehaviorObject target = objects.instanceObject(TargetType.ConfigKey, parameter, key);
+                target.setObjectName(new ObjectName(null, null, key));
+                behavior.getRelations().get(start + 1).setSubject(target);
+            }
+        }
+    }
+
     @Override
     public Void visitTable_collection_expression(Table_collection_expressionContext ctx) {
         ExpressionContext expression = ctx.expression();
@@ -906,12 +1000,10 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
         if (names.size() == 3 && "SYS".equals(names.get(0))) {
             names.remove(0);
         }
-        if (names.size() != 2 || !"DBMS_XPLAN".equals(names.get(0))
-                || !("DISPLAY".equals(names.get(1)) || "DISPLAY_CURSOR".equals(names.get(1)))) {
+        if (names.size() != 2 || !"DBMS_XPLAN".equals(names.get(0)) || !("DISPLAY".equals(names.get(1)) || "DISPLAY_CURSOR".equals(names.get(1)))) {
             return visitChildren(ctx);
         }
-        addUnary(SplitQueryType.SELECT, BehaviorAction.CALL,
-            objects.object(TargetType.Function, name, List.of("SYS", String.join(".", names))));
+        addUnary(SplitQueryType.SELECT, BehaviorAction.CALL, objects.object(TargetType.Function, name, List.of("SYS", String.join(".", names))));
         if ("DISPLAY".equals(names.get(1))) {
             displayPlanTable(name, arguments);
         } else {
@@ -924,8 +1016,7 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
         ExpressionContext table = null;
         for (int i = 0; i < arguments.size(); i++) {
             ArgumentContext argument = arguments.get(i);
-            if (argument.identifier() == null && i == 0
-                    || argument.identifier() != null && "TABLE_NAME".equals(oracleIdentifierKey(argument.identifier().getText()))) {
+            if (argument.identifier() == null && i == 0 || argument.identifier() != null && "TABLE_NAME".equals(oracleIdentifierKey(argument.identifier().getText()))) {
                 table = argument.expression();
             }
         }
@@ -1124,7 +1215,7 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
             return null;
         }
         List<String> names = new ArrayList<>();
-        collectNames(context, names);
+        collectNames(context, names, type == TargetType.Function);
         if (type == TargetType.Table && names.size() == 1 && StringUtils.equalsIgnoreCase("DUAL", names.get(0))) {
             return objects.instanceObject(type, context, names.get(0));
         }
@@ -1132,16 +1223,25 @@ final class OraStatementBehaviorVisitor extends PlSqlParserBaseVisitor<Void> {
     }
 
     private void collectNames(ParseTree tree, List<String> names) {
+        collectNames(tree, names, false);
+    }
+
+    private void collectNames(ParseTree tree, List<String> names, boolean preserveQuotes) {
         if (tree instanceof IdentifierContext || tree instanceof Id_expressionContext) {
             ParserRuleContext context = (ParserRuleContext) tree;
-            names.add(unquote(parser.getTokenStream().getText(context.getStart(), context.getStop())));
+            String name = parser.getTokenStream().getText(context.getStart(), context.getStop());
+            if (!preserveQuotes) {
+                name = unquote(name);
+            }
+
+            names.add(name);
             return;
         }
         if (tree instanceof Link_nameContext) {
             return;
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
-            collectNames(tree.getChild(i), names);
+            collectNames(tree.getChild(i), names, preserveQuotes);
         }
     }
 

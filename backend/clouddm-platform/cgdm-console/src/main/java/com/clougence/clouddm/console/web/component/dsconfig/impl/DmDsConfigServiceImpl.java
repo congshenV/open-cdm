@@ -116,7 +116,9 @@ public class DmDsConfigServiceImpl implements DmDsConfigService, UnifiedPostCons
         for (DataSourceType dsType : DataSourceType.values()) {
             DsConfig dsConfig = this.dsConstantSettings(dsType);
             if (dsConfig != null) {
-                data.put(dsType, dsConfig.clone());
+                DsConfig copy = dsConfig.clone();
+                copy.getIsolations().forEach(isolation -> isolation.setI18n(DmI18nUtils.getMessage(isolation.getI18n())));
+                data.put(dsType, copy);
             }
         }
         return data;
@@ -138,6 +140,7 @@ public class DmDsConfigServiceImpl implements DmDsConfigService, UnifiedPostCons
 
             DsConfig config = new DsConfig();
             config.setFeatures(PluginManager.hasFeature(dsType));
+            config.setClassify(dsType.getClassify());
             config.setConstant(new DsConstantConfig());
             config.setCategories(new DsCategories());
             config.setMenus(new HashMap<>());
@@ -155,7 +158,7 @@ public class DmDsConfigServiceImpl implements DmDsConfigService, UnifiedPostCons
             if (supportSpi != null) {
                 config.setIsolations(supportSpi.supportIsolation().stream().map(isolation -> {
                     I18nDmLabelKeys i18nKey = I18nDmLabelKeys.valueOf("RDB_ISOLATION_" + isolation.getName());
-                    return new DsIsolation(isolation.getName(), DmI18nUtils.getMessage(i18nKey.name()));
+                    return new DsIsolation(isolation.getName(), i18nKey.name());
                 }).collect(Collectors.toList()));
             } else {
                 config.setIsolations(Collections.emptyList());
@@ -168,6 +171,8 @@ public class DmDsConfigServiceImpl implements DmDsConfigService, UnifiedPostCons
                 option.setDelimited(true);
                 option.setDefaultLimit(20);
                 constant.setQuickQueryMap(loadQuickQueryMap(cmdTemplate, option));
+            } else {
+                constant.setQuickQueryMap(Collections.emptyMap());
             }
             DsBrowseSpi browseSpi = PluginManager.findDsBrowseSpi(dsType);
             if (browseSpi != null) {
@@ -320,7 +325,7 @@ public class DmDsConfigServiceImpl implements DmDsConfigService, UnifiedPostCons
 
         List<UmiTypes> curLevelsDef = new ArrayList<>();
         Map<UmiTypes, Object> curLevelsParam = new HashMap<>();
-        for (int i = 2; i < levels.size(); i++) {
+        for (int i = 2; i < levels.size() && i < levelsDef.size(); i++) {
             UmiTypes umiType = UmiTypes.valueOfCode(levelsDef.get(i));
             curLevelsParam.put(umiType, levels.get(i));
             curLevelsDef.add(umiType);

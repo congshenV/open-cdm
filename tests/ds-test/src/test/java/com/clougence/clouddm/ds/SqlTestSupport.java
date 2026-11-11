@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 杭州开云集致科技有限公司
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.clougence.clouddm.ds;
 
 import java.util.LinkedHashMap;
@@ -8,13 +23,16 @@ import java.util.function.Function;
 import com.clougence.clouddm.base.metadata.ds.DataSourceType;
 import com.clougence.clouddm.ds.ads.sql.ads4my.AdsMySqlEngineSpi;
 import com.clougence.clouddm.ds.clickhouse.sql.ChSqlEngineSpi;
+import com.clougence.clouddm.ds.cloudberry.sql.CbSqlEngineSpi;
+import com.clougence.clouddm.ds.cockroachdb.sql.CrdbSqlEngineSpi;
 import com.clougence.clouddm.ds.dameng.sql.DmSqlEngineSpi;
 import com.clougence.clouddm.ds.gauss.sql.GaussSqlEngineSpi;
+import com.clougence.clouddm.ds.greenplum.sql.GpSqlEngineSpi;
+import com.clougence.clouddm.ds.hologres.sql.HgSqlEngineSpi;
 import com.clougence.clouddm.ds.maxcompute.dsconf.McConfig;
 import com.clougence.clouddm.ds.maxcompute.sql.McSqlEngineSpi;
 import com.clougence.clouddm.ds.oceanbase.sql.ob4my.ObSqlEngineSpi;
 import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.ObOraSqlEngineSpi;
-import com.clougence.clouddm.ds.polardb.sql.porx.PorXSqlEngineSpi;
 import com.clougence.clouddm.ds.starrocks.sql.SrSqlEngineSpi;
 import com.clougence.clouddm.ds.tidb.sql.TiSqlEngineSpi;
 import com.clougence.clouddm.sdk.service.execute.MetaService;
@@ -30,6 +48,7 @@ import com.clougence.sql.iso.sql99.Sql99SqlEngineSpi;
 import com.clougence.sql.mongodb.MongoSqlEngineSpi;
 import com.clougence.sql.mysql.MySqlEngineSpi;
 import com.clougence.sql.oracle.OraSqlEngineSpi;
+import com.clougence.sql.polardbx.PorXSqlEngineSpi;
 import com.clougence.sql.postgres.PgSqlEngineSpi;
 import com.clougence.sql.redis.RedisSqlEngineSpi;
 import com.clougence.sql.sqlserver.MsSqlSqlEngineSpi;
@@ -53,9 +72,11 @@ public final class SqlTestSupport {
         bind("gauss", DataSourceType.GaussDB, GaussSqlEngineSpi::new);
         bind("gauss_og", DataSourceType.GaussDBForOpenGauss, GaussSqlEngineSpi::new);
         bind("goldendb", DataSourceType.GoldenDBMySQL, MySqlEngineSpi::new);
-        bind("greenplum", DataSourceType.Greenplum, PgSqlEngineSpi::new);
+        bind("greenplum", DataSourceType.Greenplum, GpSqlEngineSpi::new);
+        bind("cloudberry", DataSourceType.Cloudberry, CbSqlEngineSpi::new);
+        bind("cockroachdb", DataSourceType.CockroachDB, CrdbSqlEngineSpi::new);
         bind("hana", DataSourceType.Hana, HanaSqlEngineSpi::new);
-        bind("hologres", DataSourceType.Hologres, PgSqlEngineSpi::new);
+        bind("hologres", DataSourceType.Hologres, HgSqlEngineSpi::new);
         bind("mariadb", DataSourceType.MariaDB, MySqlEngineSpi::new);
         bind("maxcompute", DataSourceType.MaxCompute, McSqlEngineSpi::new);
         bind("mongodb", DataSourceType.MongoDB, MongoSqlEngineSpi::new);
@@ -63,6 +84,7 @@ public final class SqlTestSupport {
         bind("ob4my", DataSourceType.OceanBase, ObSqlEngineSpi::new);
         bind("ob4ora", DataSourceType.ObForOracle, ObOraSqlEngineSpi::new);
         bind("oracle", DataSourceType.Oracle, OraSqlEngineSpi::new);
+        bind("yashandb_oracle", DataSourceType.YashanDBOracle, OraSqlEngineSpi::new);
         bind("por4my", DataSourceType.PolarDbMySQL, MySqlEngineSpi::new);
         bind("por4pg", DataSourceType.PolarDBPg, PgSqlEngineSpi::new);
         bind("por4x", DataSourceType.PolarDbX, PorXSqlEngineSpi::new);
@@ -104,7 +126,7 @@ public final class SqlTestSupport {
     public static SqlParserParameters parserParameters(String datasource) {
         return switch (datasource) {
             case "adb" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "8.0.46"));
-            case "mariadb" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "8.0.46"));
+            case "mariadb" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "10.6.18-MariaDB"));
             case "goldendb" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "8.0.25"));
             case "mysql" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "8.0.46"));
             case "ob4my" -> new SqlParserParameters(Map.of(SqlParserParameters.VERSION, "8.0.46"));

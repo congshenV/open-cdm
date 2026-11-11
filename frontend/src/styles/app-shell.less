@@ -631,6 +631,11 @@ button.app-content-header__link {
   white-space: nowrap;
 }
 
+// 上游 v4.7.0 dark mode：头部右侧链接内图标反色
+[data-theme='dark'] .app-content-header__link .icon-v2 {
+  filter: brightness(0) invert(1) !important;
+}
+
 .sql-layout-body {
   flex: 1;
   min-height: 0;
@@ -1146,8 +1151,8 @@ button.app-content-header__link {
 
 .ivu-btn-primary:not([disabled]),
 .ant-btn-primary:not([disabled]) {
-  background: var(--primary-color) !important;
-  border-color: var(--primary-color) !important;
+  background: var(--primary-button-bg) !important;
+  border-color: var(--primary-button-bg) !important;
   color: #ffffff !important;
 
   span {
@@ -1157,8 +1162,8 @@ button.app-content-header__link {
   &:hover,
   &:focus {
     opacity: 0.92;
-    background: var(--primary-color) !important;
-    border-color: var(--primary-color) !important;
+    background: var(--primary-button-bg) !important;
+    border-color: var(--primary-button-bg) !important;
     color: #ffffff !important;
 
     span {

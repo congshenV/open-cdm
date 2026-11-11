@@ -1,0 +1,68 @@
+// Shared surfaces, including overlays teleported outside their page.
+.ivu-tooltip-popper,
+.ivu-poptip-popper,
+.ant-tooltip,
+.ant-popover {
+  --text-primary: #171717;
+  --text-secondary: #515a6e;
+  --popover-bg: #fff;
+  --popover-text: #515a6e;
+  --antd-arrow-background-color: var(--popover-bg);
+}
+
+.ivu-tooltip-popper .ivu-tooltip-inner,
+.ivu-poptip-popper .ivu-poptip-inner,
+.ant-tooltip .ant-tooltip-inner,
+.ant-popover .ant-popover-inner {
+  background-color: var(--popover-bg);
+  color: var(--popover-text);
+}
+
+.ivu-tooltip-popper .ivu-tooltip-inner {
+  max-width: ~'min(300px, calc(100vw - 32px))';
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ant-tooltip {
+  max-width: ~'min(560px, calc(100vw - 32px))';
+
+  .ant-tooltip-inner {
+    overflow-wrap: anywhere;
+  }
+}
+
+.ant-tooltip .ant-tooltip-arrow::before,
+.ant-popover .ant-popover-arrow::before {
+  background-color: var(--popover-bg);
+}
+
+.ivu-tooltip-popper {
+  &[x-placement^='top'] .ivu-tooltip-arrow {
+    border-top-color: var(--popover-bg);
+  }
+
+  &[x-placement^='right'] .ivu-tooltip-arrow {
+    border-right-color: var(--popover-bg);
+  }
+
+  &[x-placement^='bottom'] .ivu-tooltip-arrow {
+    border-bottom-color: var(--popover-bg);
+  }
+
+  &[x-placement^='left'] .ivu-tooltip-arrow {
+    border-left-color: var(--popover-bg);
+  }
+}
+
+[data-theme='dark'] {
+  .ivu-tooltip-popper,
+  .ivu-poptip-popper,
+  .ant-tooltip,
+  .ant-popover {
+    --text-primary: #fafafa;
+    --text-secondary: #b0b0b0;
+    --popover-bg: var(--bg-card);
+    --popover-text: var(--text-primary);
+  }
+}

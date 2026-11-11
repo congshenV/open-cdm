@@ -77,6 +77,7 @@ import './styles/iconfont.css';
 import 'view-ui-plus/dist/styles/viewuiplus.css';
 import './styles/iconfont';
 import './styles/app.less';
+import './styles/description-popover.less';
 import './iconfontJs';
 import './styles/iconfontCss.css';
 import '@/assets/iconfont-v2/iconfont.css';
@@ -92,6 +93,7 @@ import { LocaleProvider } from 'ant-design-vue';
 import * as filters from '@/filters';
 // Include Theme Styles
 import './styles/themes/theme.less';
+import './styles/hover-popover.less';
 
 // Determines whether the browser supports vue3
 checkES5Support();
@@ -207,6 +209,11 @@ app.config.globalProperties.$message = Toast;
 
 // Initialize the theme system
 store.dispatch('initTheme');
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (store.state.themeMode === 'system') {
+    store.dispatch('setTheme', 'system');
+  }
+});
 
 // Mount Application
 app.mount('#app');

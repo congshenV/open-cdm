@@ -3,6 +3,15 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.sql.sqlserver.analysis.behavior;
 
@@ -15,6 +24,7 @@ import com.clougence.clouddm.sdk.sql.SqlParserParameters;
 import com.clougence.clouddm.sdk.sql.analysis.behavior.BehaviorAction;
 import com.clougence.clouddm.sdk.sql.analysis.behavior.BehaviorAnalysisSpi;
 import com.clougence.clouddm.sdk.sql.analysis.behavior.StatementBehavior;
+import com.clougence.clouddm.sdk.sql.analysis.behavior.TargetType;
 import com.clougence.clouddm.sdk.sql.parser.SplitQueryType;
 import com.clougence.dslpaser.antlr.DslHelper;
 import com.clougence.schema.umi.struts.UmiTypes;
@@ -34,7 +44,13 @@ public class MsBehaviorAnalysisSpi implements BehaviorAnalysisSpi {
         if (Boolean.parseBoolean(this.parameters.get(SqlParserParameters.EXPECT_PLAN))) {
             behaviors.forEach(behavior -> {
                 behavior.setStatementType(SplitQueryType.SELECT);
-                behavior.getRelations().forEach(relation -> relation.setAction(BehaviorAction.READ));
+                behavior.getRelations().forEach(relation -> {
+                    if (relation.getSubject().getObjectType() == TargetType.Function) {
+                        relation.setAction(BehaviorAction.CALL);
+                    } else {
+                        relation.setAction(BehaviorAction.READ);
+                    }
+                });
             });
         }
         return behaviors.stream();
@@ -44,7 +60,7 @@ public class MsBehaviorAnalysisSpi implements BehaviorAnalysisSpi {
 
         MsBehaviorParserVisitor[] holder = new MsBehaviorParserVisitor[1];
         DslHelper.doVisitor(MsSqlDslProvider.INSTANCE, queryReader, (lexer, parser) -> {
-            holder[0] = new MsBehaviorParserVisitor(parser, levels, baseLine, baseColumn);
+            holder[0] = new MsBehaviorParserVisitor(parser, levels, baseLine, baseColumn, !Boolean.parseBoolean(parameters.get(SqlParserParameters.EXPECT_PLAN)));
             return holder[0];
         });
         return holder[0].behaviors();

@@ -3,10 +3,20 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.sql.common.registry;
 
 import java.util.*;
+import java.util.function.UnaryOperator;
 
 /**
  * Small dialect-neutral registry for versioned resource facts.
@@ -16,11 +26,15 @@ import java.util.*;
  */
 public final class VersionedResourceRegistry<T> {
 
-    private final ResourceRegistryDialect                   dialect;
+    private final UnaryOperator<String>                     normalizeIdentifier;
     private final Map<ResourceKey, List<VersionedValue<T>>> resources = new LinkedHashMap<>();
 
     public VersionedResourceRegistry(ResourceRegistryDialect dialect){
-        this.dialect = Objects.requireNonNull(dialect, "dialect");
+        this.normalizeIdentifier = Objects.requireNonNull(dialect, "dialect")::normalizeIdentifier;
+    }
+
+    public VersionedResourceRegistry(UnaryOperator<String> normalizeIdentifier){
+        this.normalizeIdentifier = Objects.requireNonNull(normalizeIdentifier, "normalizeIdentifier");
     }
 
     public void register(RegisteredResourceType type, int minimumVersion, int maximumVersion, T value, String... nameParts) {
@@ -74,7 +88,7 @@ public final class VersionedResourceRegistry<T> {
             if (part == null || part.isBlank()) {
                 throw new IllegalArgumentException("resource name part must not be blank");
             }
-            String value = dialect.normalizeIdentifier(part);
+            String value = normalizeIdentifier.apply(part);
             if (value == null || value.isBlank()) {
                 throw new IllegalArgumentException("normalized resource name part must not be blank");
             }

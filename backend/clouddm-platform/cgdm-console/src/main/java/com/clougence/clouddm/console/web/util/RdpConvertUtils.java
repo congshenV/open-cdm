@@ -22,7 +22,6 @@ import java.util.stream.Collectors;
 import com.clougence.clouddm.base.metadata.ds.ConfigValType;
 import com.clougence.clouddm.console.web.component.approval.model.ApprovalAnalysisStateMO;
 import com.clougence.clouddm.console.web.component.approval.model.ApprovalExecutionStateMO;
-import com.clougence.clouddm.console.web.component.config.RootUserConfig;
 import com.clougence.clouddm.console.web.component.config.UserConfigKvDef;
 import com.clougence.clouddm.console.web.component.dsconfig.mode.DsConfigKvDef;
 import com.clougence.clouddm.console.web.constants.LoginAuthType;
@@ -33,6 +32,7 @@ import com.clougence.clouddm.console.web.model.fo.security.ModifyAuthForAppend;
 import com.clougence.clouddm.console.web.model.fo.security.ModifyAuthForDelete;
 import com.clougence.clouddm.console.web.model.fo.security.ModifyAuthForUpdate;
 import com.clougence.clouddm.console.web.model.fo.ticket.ApplyAuth;
+import com.clougence.clouddm.console.web.model.fo.ticket.RdpAddAuthTicketFO;
 import com.clougence.clouddm.console.web.model.fo.ticket.RdpTicketBasicVO;
 import com.clougence.clouddm.console.web.model.vo.*;
 import com.clougence.clouddm.console.web.model.vo.role.RoleAuthTreeVO;
@@ -48,7 +48,6 @@ import com.clougence.clouddm.platform.dal.model.auth.*;
 import com.clougence.clouddm.platform.dal.model.datasource.DmDsConfigKv4DmDO;
 import com.clougence.clouddm.platform.dal.model.datasource.DmDsDO;
 import com.clougence.clouddm.platform.dal.model.system.DmSysUserConfDO;
-import com.clougence.clouddm.sdk.approval.ApprovalProvider;
 import com.clougence.clouddm.sdk.security.auth.AuthInfo;
 import com.clougence.clouddm.sdk.security.auth.AuthInfoType;
 import com.clougence.clouddm.sdk.security.auth.AuthKind;
@@ -63,6 +62,8 @@ import com.clougence.utils.StringUtils;
 import com.clougence.utils.format.DateFormatType;
 import com.clougence.utils.format.WellKnowFormat;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -236,8 +237,8 @@ public class RdpConvertUtils {
         vo.setResDesc(dsAuthDO.getResDesc());
         vo.setLevel(dsAuthDO.getResPath());
         vo.setDsAuthKinds(dsAuthDO.getAuthLabels());
-        vo.setStartTime(dsAuthDO.getStartTime() == null ? null : DateFormatType.s_yyyyMMdd_HHmmss.format(dsAuthDO.getStartTime()));
-        vo.setEndTime(dsAuthDO.getEndTime() == null ? null : DateFormatType.s_yyyyMMdd_HHmmss.format(dsAuthDO.getEndTime()));
+        vo.setStartTimeMs(dsAuthDO.getStartTime() == null ? null : dsAuthDO.getStartTime().getTime());
+        vo.setEndTimeMs(dsAuthDO.getEndTime() == null ? null : dsAuthDO.getEndTime().getTime());
         return vo;
     }
 
@@ -425,8 +426,8 @@ public class RdpConvertUtils {
         dsAuthDO.setAuthLabels(info.getAuthLabels());
         dsAuthDO.setKindType(authKind);
         dsAuthDO.setOwnerUid(targetUid);
-        dsAuthDO.setStartTime(parseData(info.getStartTime()));
-        dsAuthDO.setEndTime(parseData(info.getEndTime()));
+        dsAuthDO.setStartTime(info.getStartTimeMs() == null ? null : new Date(info.getStartTimeMs()));
+        dsAuthDO.setEndTime(info.getEndTimeMs() == null ? null : new Date(info.getEndTimeMs()));
         return dsAuthDO;
     }
 
@@ -439,8 +440,8 @@ public class RdpConvertUtils {
         dsAuthDO.setAuthLabels(info.getAuthLabels());
         dsAuthDO.setKindType(authKind);
         dsAuthDO.setOwnerUid(targetUid);
-        dsAuthDO.setStartTime(parseData(info.getStartTime()));
-        dsAuthDO.setEndTime(parseData(info.getEndTime()));
+        dsAuthDO.setStartTime(info.getStartTimeMs() == null ? null : new Date(info.getStartTimeMs()));
+        dsAuthDO.setEndTime(info.getEndTimeMs() == null ? null : new Date(info.getEndTimeMs()));
         return dsAuthDO;
     }
 
@@ -454,8 +455,8 @@ public class RdpConvertUtils {
         dsAuthDO.setAuthLabels(info.getAuthLabels());
         dsAuthDO.setKindType(authKind);
         dsAuthDO.setOwnerUid(targetUid);
-        dsAuthDO.setStartTime(parseData(info.getStartTime()));
-        dsAuthDO.setEndTime(parseData(info.getEndTime()));
+        dsAuthDO.setStartTime(info.getStartTimeMs() == null ? null : new Date(info.getStartTimeMs()));
+        dsAuthDO.setEndTime(info.getEndTimeMs() == null ? null : new Date(info.getEndTimeMs()));
         return dsAuthDO;
     }
 
@@ -481,6 +482,26 @@ public class RdpConvertUtils {
                 break;
             }
         }
+    }
+
+    public static RdpAddAuthTicketFO readAuthTicket(String json) {
+        ObjectNode ticket = JsonUtils.toObj(json, ObjectNode.class);
+        // Legacy ticket snapshots have no timezone. Preserve their original JVM-timezone interpretation.
+        for (JsonNode item : ticket.path("applyAuths")) {
+            ObjectNode authorization = (ObjectNode) item;
+            for (String field : List.of("startTime", "endTime")) {
+                JsonNode legacyTime = authorization.remove(field);
+                if (legacyTime == null || legacyTime.isNull() || authorization.has(field + "Ms")) {
+                    continue;
+                }
+
+                Date time = parseData(legacyTime.asText());
+                if (time != null) {
+                    authorization.put(field + "Ms", time.getTime());
+                }
+            }
+        }
+        return JsonUtils.toObj(ticket.toString(), RdpAddAuthTicketFO.class);
     }
 
     private static Date parseData(String date) {
@@ -568,21 +589,6 @@ public class RdpConvertUtils {
         user.setRoleId(loginUser.getRoleId());
         user.setAccessToken(loginUser.getAccessToken());
         return user;
-    }
-
-    public static String convertToApprovalEnableConfigKey(ApprovalProvider type) {
-        switch (type) {
-            case Feishu:
-                return RootUserConfig.Fields.feishuEnableApprovalService;
-            case Wechat:
-                return RootUserConfig.Fields.wechatEnableApprovalService;
-            case DingTalk:
-                return RootUserConfig.Fields.dingEnableApprovalService;
-            case Internal:
-            case Custom:
-            default:
-                return null;
-        }
     }
 
     public static RdpTicketProcessVO convertToTicketProcessVO(DmApprovalProcessDO processDO) {

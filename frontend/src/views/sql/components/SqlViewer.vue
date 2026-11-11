@@ -49,14 +49,7 @@
         >
           <template #editor-controls>
             <CommandExamples v-if="tab.support.commandExamples?.length" :key="tab.dsId" :examples="tab.support.commandExamples" />
-            <SqlScriptPopover
-              :tab="tab"
-              :get-editor-content="getEditorContent"
-              :store-query-tabs="storeQueryTabs"
-              @open-script="$emit('open-script', $event)"
-              @script-deleted="$emit('script-deleted', $event)"
-              @script-renamed="$emit('script-renamed', $event)"
-            />
+            <SqlScriptPopover :tab="tab" :get-editor-content="getEditorContent" @open-script="$emit('open-script', $event)" />
           </template>
         </Editor>
         <Transition name="sql-editor-loading">
@@ -111,24 +104,35 @@
       :class="`query-message ${tab.message.type}`"
       v-if="tab.message.text && tab.message.show && tab.connected && (!aiBinding || !aiNarrow || aiView === 'editor')"
     >
-      <div v-html="tab.message.text"></div>
-      <CustomIcon type="icon-v2-close2" @click="handleCloseError" hoverStyle />
+      <div class="query-message__text" v-html="tab.message.text"></div>
+      <CustomIcon class="query-message__action" type="icon-v2-close2" @click="handleCloseError" hoverStyle />
     </div>
     <div
       class="query-message"
       :class="tab.workspaceConnectionState === 'disconnected' ? 'Info' : 'Error'"
       v-if="!tab.connected && tab.msgContent && (!aiBinding || !aiNarrow || aiView === 'editor')"
     >
-      {{ tab.msgContent }}
+      <span class="query-message__text">{{ tab.msgContent }}</span>
       <Button
         v-if="!['connecting', 'reconnecting', 'disconnecting'].includes(tab.workspaceConnectionState)"
-        type="text"
+        class="query-message__action"
+        type="default"
         size="small"
         @click="handleClickDsStatusIcon"
       >
         {{ $t(tab.workspaceConnectionState === 'disconnected' ? 'sql-connection-open' : 'sql-connection-reconnect') }}
       </Button>
     </div>
+    <CCModal
+      v-model="operationConfirm.visible"
+      wrap-class-name="sql-operation-confirm"
+      :title="$t('cao-zuo-que-ren')"
+      :width="520"
+      @on-ok="confirmOperation"
+      @on-cancel="closeOperationConfirm"
+    >
+      {{ operationConfirm.message }}
+    </CCModal>
     <CCModal v-model="showNoPassedRuleModal" :title="$t('gui-ze-xiao-yan-shi-bai')" :width="800">
       <Table :columns="noPassedRuleColumns" :data="noPassedRuleList" border stripe>
         <template #lines="{ row }">
@@ -159,7 +163,7 @@ import { markRaw } from 'vue';
 import AppPageTabs from '@/components/layout/AppPageTabs.vue';
 import AiSqlPanel from '@/views/ai/components/AiSqlPanel.vue';
 import { aiErrorMessage } from '@/services/ai';
-import * as monaco from 'monaco-editor';
+import { monaco } from '@/components/editor/monaco';
 import { SQL_EDITOR_TYPOGRAPHY } from '@/components/editor/sqlEditorTypography';
 import { mapGetters, mapMutations, mapState } from 'vuex';
 import Operators from '@/views/sql/components/Operators';
@@ -188,7 +192,7 @@ export default {
     AiSqlPanel,
     SqlLoadingSkeleton
   },
-  emits: ['open-script', 'script-deleted', 'script-renamed', 'switch-tab', 'workspace-connection-error', 'workspace-connection-success'],
+  emits: ['open-script', 'switch-tab', 'workspace-connection-error', 'workspace-connection-success'],
   props: {
     handleClickDsStatusIcon: Function,
     handleGetDsSetting: Function,
@@ -267,6 +271,7 @@ export default {
       currentWarnLevel: '',
       noPassedRuleList: [],
       showNoPassedRuleModal: false,
+      operationConfirm: { visible: false, message: '', callback: null },
       stopping: false,
       monacoEditor: null,
       editorTabKey: null,
@@ -632,6 +637,7 @@ export default {
         }
       };
 
+      this.showPendingResult(this.tab, wsData.object.requestId);
       this.handleCloseModal();
 
       this.tab.cost.popList = [
@@ -676,6 +682,7 @@ export default {
         }
       };
 
+      this.showPendingResult(this.tab, wsData.object.requestId);
       this.handleCloseModal();
 
       this.tab.cost.popList = [
@@ -726,17 +733,23 @@ export default {
 
       if (this.tab.support[confName].conf === 'Hint') {
         if (!this.tab.autoCommit || focus) {
-          this.$Modal.confirm({
-            title: this.tab.support[confName].hint,
-            onOk: () => {
-              callback.apply(this);
-            }
-          });
+          this.operationConfirm.message = this.tab.support[confName].hint;
+          this.operationConfirm.callback = callback;
+          this.operationConfirm.visible = true;
           return;
         }
       }
 
       callback();
+    },
+    confirmOperation() {
+      const callback = this.operationConfirm.callback;
+      this.closeOperationConfirm();
+      callback.apply(this);
+    },
+    closeOperationConfirm() {
+      this.operationConfirm.visible = false;
+      this.operationConfirm.callback = null;
     },
     //
     setEditorInstance(editor, tabKey) {
@@ -771,9 +784,18 @@ export default {
       let content = value;
       if (typeof content !== 'string') content = this.monacoEditor?.getValue() || '';
       this.tab.text = content;
-      if (this.tab.scriptId) {
-        this.tab.isEditing = content !== this.tab.scriptSavedText;
-      }
+    },
+    insertFavoriteSql(sql, selection) {
+      const editor = this.monacoEditor;
+      const model = editor.getModel();
+      const offset = model.getOffsetAt(selection.getStartPosition());
+      const text = sql.replace(/\r\n|\r|\n/g, model.getEOL());
+      editor.pushUndoStop();
+      if (!editor.executeEdits('sql-favorite', [{ range: selection, text }])) return false;
+      editor.pushUndoStop();
+      editor.setPosition(model.getPositionAt(offset + text.length));
+      editor.focus();
+      return true;
     },
     getEditorContent() {
       return this.monacoEditor?.getValue() || '';
@@ -838,6 +860,13 @@ export default {
       }
       return list;
     },
+    showPendingResult(tab, requestId) {
+      if (tab.result.pending) return;
+      const list = tab.result.list;
+      const showIndex = list.length ? list[list.length - 1].showIndex + 1 : 1;
+      tab.result.pending = { resultId: `pending-${requestId}`, requestId, showIndex, message: this.$t('zhi-xing-zhong') };
+      tab.result.active = tab.result.pending.resultId;
+    },
     onclose() {},
     onmessage(data) {
       try {
@@ -867,11 +896,14 @@ export default {
           // Save query type (plan query or normal query).
           metaData.queryType = currentTab.currentQueryType || 'query';
           metaData.fetchCount = 0;
+          metaData.transposed = false;
           metaData.cost = { ...currentTab.cost };
 
           // Initialize the result set object before data is available.
           const len = currentTab.result.list.length;
+          const pending = currentTab.result.pending;
           metaData.showIndex = len ? currentTab.result.list[len - 1].showIndex + 1 : 1;
+          if (pending?.requestId === metaData.requestId) metaData.showIndex = pending.showIndex;
           // Initialize exportState for the result tab.
           metaData.exportState = {
             exporting: false,
@@ -919,6 +951,7 @@ export default {
           // Add to the result list.
           currentTab.result.list.push(metaData);
           currentTab.result.active = metaData.resultId;
+          if (pending?.requestId === metaData.requestId) currentTab.result.pending = null;
         }
         // Progress updates carry the fetched count independently of the receive mode.
         if (queryData.object.resultType === 'ResultSetRows') {
@@ -1024,6 +1057,10 @@ export default {
         }
 
         if (queryData.object.resultType === 'Done') {
+          if (currentTab.result.pending?.requestId === queryData.object.requestId) {
+            if (currentTab.result.active === currentTab.result.pending.resultId) currentTab.result.active = 'message';
+            currentTab.result.pending = null;
+          }
           this.storeQueryTabs();
           currentTab.running = false;
         }
@@ -1033,6 +1070,7 @@ export default {
         }
 
         if (queryData.object.resultType === 'QueryScript') {
+          if (currentTab.running) this.showPendingResult(currentTab, queryData.object.requestId);
           currentTab.executeInfo.push({
             time: queryData.time,
             ...queryData.object
@@ -1052,9 +1090,13 @@ export default {
             }
 
             if (entity.mode === 'Hint') {
-              currentTab.message.show = true;
-              currentTab.message.text = formatError(entity.message);
-              currentTab.message.type = entity.level;
+              if (entity.level === 'Info' && currentTab.result.pending?.requestId === queryData.object.requestId) {
+                currentTab.result.pending.message = entity.message;
+              } else {
+                currentTab.message.show = true;
+                currentTab.message.text = formatError(entity.message);
+                currentTab.message.type = entity.level;
+              }
             } else {
               currentTab.executeInfo.push({
                 time: queryData.time,
@@ -1257,6 +1299,10 @@ export default {
 };
 </script>
 <style lang="less">
+.sql-operation-confirm .ant-modal .ant-modal-content .ant-modal-footer {
+  justify-content: flex-end !important;
+}
+
 .sql-viewer {
   .sql-editor-stage {
     position: relative;
@@ -1363,19 +1409,33 @@ export default {
     max-height: 200px;
     overflow: auto;
     display: flex;
+    gap: 12px;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
+    border-left: 3px solid var(--border-primary);
+
+    .query-message__text {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .query-message__action {
+      flex-shrink: 0;
+    }
 
     &.Error {
-      background: #ffdcdc;
+      background: var(--error-bg);
+      border-left-color: var(--error-color);
     }
 
     &.Warn {
-      background: #fffddc;
+      background: var(--warning-bg);
+      border-left-color: var(--warning-color);
     }
 
     &.Info {
-      background: #dedede;
+      background: var(--bg-secondary);
     }
   }
 }

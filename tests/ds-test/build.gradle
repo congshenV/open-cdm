@@ -28,6 +28,7 @@ dependencies {
     testImplementation(project(':sql-iso-sql92'))
     testImplementation(project(':sql-iso-sql99'))
     testImplementation(project(':sql-iso-sql2003'))
+    testImplementation(project(':sql-polardbx'))
 
     testImplementation(project(':ds-mysql'))
     testImplementation(project(':ds-mariadb'))
@@ -37,6 +38,7 @@ dependencies {
     testImplementation(project(':ds-goldendb'))
     testImplementation(project(':ds-postgres'))
     testImplementation(project(':ds-greenplum'))
+    testImplementation(project(':ds-cloudberry'))
     testImplementation(project(':ds-polardb'))
     testImplementation(project(':ds-oracle'))
     testImplementation(project(':ds-dameng'))

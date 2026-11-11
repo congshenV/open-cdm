@@ -15,16 +15,19 @@
  */
 package com.clougence.sql.hana.parser;
 
+import java.util.Set;
+
+import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.Parser;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.AbstractParseTreeVisitor;
 
-import com.clougence.sql.hana.parser.antlr.HanaParser;
 import com.clougence.clouddm.sdk.sql.parser.SplitQueryType;
 import com.clougence.dslpaser.antlr.DslProvider;
 import com.clougence.dslpaser.parse.AntlrStatementParser;
 import com.clougence.sql.common.parser.AbstractSplitAnalysisSpi;
+import com.clougence.sql.hana.parser.antlr.HanaParser;
 
 public class HanaSplitAnalysisSpi extends AbstractSplitAnalysisSpi {
 
@@ -36,6 +39,21 @@ public class HanaSplitAnalysisSpi extends AbstractSplitAnalysisSpi {
     @Override
     protected AbstractParseTreeVisitor<SplitQueryType> splitVisitor() {
         return HanaSplitVisitor.INSTANCE;
+    }
+
+    @Override
+    protected Set<SplitQueryType> collectTypes(ParserRuleContext context, String script) {
+        Set<SplitQueryType> types = HanaSplitVisitor.INSTANCE.collectTypes((HanaParser.SplitStatementContext) context);
+        var lexer = dslProvider().createLexer(CharStreams.fromString(script));
+        lexer.removeErrorListeners();
+        HanaParser parser = (HanaParser) dslProvider().createParser(lexer);
+        parser.removeErrorListeners();
+        var statement = parser.statementRoot();
+        // Structural splitting also accepts statements beyond the strict analysis grammar.
+        if (parser.getNumberOfSyntaxErrors() == 0) {
+            HanaSplitVisitor.INSTANCE.collectFunctionTypes(statement, types);
+        }
+        return types;
     }
 
     @Override

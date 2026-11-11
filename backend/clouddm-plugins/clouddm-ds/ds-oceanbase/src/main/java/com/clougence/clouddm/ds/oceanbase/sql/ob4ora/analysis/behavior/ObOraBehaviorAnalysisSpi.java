@@ -3,15 +3,21 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.clougence.clouddm.ds.oceanbase.sql.ob4ora.analysis.behavior;
 
 import java.io.Reader;
 import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.Parser;
@@ -19,6 +25,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.AbstractParseTreeVisitor;
 import org.antlr.v4.runtime.tree.ParseTree;
 
+import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.analysis.reference.ObOraResourceRegistry;
 import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.parser.ObForOraSplitAnalysisSpi;
 import com.clougence.clouddm.ds.oceanbase.sql.ob4ora.parser.ObOraDslProvider;
 import com.clougence.clouddm.ds.oceanbase.sql.parser.antlr.ObForOracleParserBaseVisitor;
@@ -28,6 +35,7 @@ import com.clougence.clouddm.sdk.sql.parser.SplitQueryType;
 import com.clougence.dslpaser.antlr.DslHelper;
 import com.clougence.schema.umi.struts.UmiTypes;
 import com.clougence.sql.common.analysis.behavior.RdbBehaviorObjectFactory;
+import com.clougence.sql.common.registry.FunctionBehavior;
 
 public class ObOraBehaviorAnalysisSpi implements BehaviorAnalysisSpi {
     @Override
@@ -74,15 +82,19 @@ final class ObOraBehaviorParserVisitor extends AbstractParseTreeVisitor<Void> {
     public Void visit(ParseTree tree) {
         ObOraStatementBehaviorVisitor visitor = new ObOraStatementBehaviorVisitor(parser, levels, baseLine, baseColumn);
         visitor.visit(tree);
+        visitor.scanFunctionCalls(tree);
         behaviors.add(visitor.behavior());
         return null;
     }
 }
 
 final class ObOraStatementBehaviorVisitor extends ObForOracleParserBaseVisitor<Void> {
+
     private final Parser                   parser;
     private final RdbBehaviorObjectFactory objects;
     private final StatementBehavior        behavior = new StatementBehavior();
+    private boolean                        explaining;
+    private boolean                        definingView;
 
     ObOraStatementBehaviorVisitor(Parser parser, Map<UmiTypes, Object> levels, int baseLine, int baseColumn){
         this.parser = parser;
@@ -92,6 +104,77 @@ final class ObOraStatementBehaviorVisitor extends ObForOracleParserBaseVisitor<V
 
     StatementBehavior behavior() {
         return behavior;
+    }
+
+    void scanFunctionCalls(ParseTree tree) {
+        if (!descendants(tree, Create_function_bodyContext.class).isEmpty() || !descendants(tree, Create_procedure_bodyContext.class).isEmpty()
+            || !descendants(tree, Create_triggerContext.class).isEmpty()) {
+            return;
+        }
+
+        explaining = !descendants(tree, Explain_statementContext.class).isEmpty();
+        definingView = !descendants(tree, Create_viewContext.class).isEmpty();
+        if (explaining) {
+            behavior.setStatementType(SplitQueryType.PERFORMANCE);
+        }
+
+        for (Function_callContext ctx : descendants(tree, Function_callContext.class)) {
+            if (ctx.function_argument().isEmpty()) {
+                continue;
+            }
+
+            ParserRuleContext name = ctx.routine_name();
+            if (name == null) {
+                name = ctx.id_expression();
+            }
+
+            recordFunctionCall(name);
+        }
+
+        for (General_element_partContext ctx : descendants(tree, General_element_partContext.class)) {
+            if (!ctx.function_argument().isEmpty() && ctx.getParent() instanceof General_elementContext parent && parent.general_element_part().size() == 1) {
+                ParserRuleContext name = ctx.routine_name();
+                if (name == null) {
+                    name = ctx.id_expression();
+                }
+
+                recordFunctionCall(name);
+            }
+        }
+
+        for (Standard_functionContext ctx : descendants(tree, Standard_functionContext.class)) {
+            if (ctx.other_function() != null && (ctx.other_function().cursor_name() != null || ctx.other_function().TIME() != null)) {
+                continue;
+            }
+            var token = ctx.getStart();
+            BehaviorObject function = objects.object(TargetType.Function, token, List.of(token.getText().toUpperCase(Locale.ROOT)));
+            FunctionBehavior rule = FunctionBehavior.DEFAULT;
+            if (!explaining && !definingView) {
+                rule = ObOraResourceRegistry.instance().functionBehavior(token.getText());
+            }
+            objects.applyFunctionBehavior(behavior, function, rule, ctx);
+        }
+    }
+
+    private void recordFunctionCall(ParserRuleContext name) {
+        if (name == null) {
+            return;
+        }
+
+        BehaviorObject function = object(TargetType.Function, name);
+        boolean alreadyRecorded = behavior.getRelations()
+            .stream()
+            .anyMatch(existing -> existing.getSubject().getObjectType() == TargetType.Function && existing.getSubject().getStartLine() == function.getStartLine()
+                                  && existing.getSubject().getStartColumn() == function.getStartColumn());
+        if (alreadyRecorded) {
+            return;
+        }
+
+        FunctionBehavior rule = FunctionBehavior.DEFAULT;
+        if (!explaining && !definingView) {
+            rule = ObOraResourceRegistry.instance().functionBehavior(name.getText());
+        }
+        objects.applyFunctionBehavior(behavior, function, rule, name);
     }
 
     @Override
@@ -116,7 +199,22 @@ final class ObOraStatementBehaviorVisitor extends ObForOracleParserBaseVisitor<V
     @Override
     public Void visitCall_statement(Call_statementContext ctx) {
         if (!ctx.routine_name().isEmpty()) {
-            add(SplitQueryType.CALL_PROG_OBJ, BehaviorAction.CALL, object(TargetType.Procedure, ctx.routine_name(0)), List.of());
+            ParserRuleContext name = ctx.routine_name(0);
+            boolean definingProgram = false;
+            for (ParseTree parent = ctx.getParent(); parent != null; parent = parent.getParent()) {
+                if (parent instanceof Create_function_bodyContext || parent instanceof Create_procedure_bodyContext || parent instanceof Create_triggerContext) {
+                    definingProgram = true;
+                    break;
+                }
+            }
+            FunctionBehavior rule = FunctionBehavior.DEFAULT;
+            if (!definingProgram) {
+                rule = ObOraResourceRegistry.instance().functionBehavior(name.getText());
+            }
+            objects.applyFunctionBehavior(behavior, object(TargetType.Procedure, name), rule, name);
+            if (behavior.getStatementType() == SplitQueryType.UNKNOWN) {
+                behavior.setStatementType(SplitQueryType.CALL_PROG_OBJ);
+            }
         }
         return null;
     }
@@ -126,7 +224,7 @@ final class ObOraStatementBehaviorVisitor extends ObForOracleParserBaseVisitor<V
             return null;
         }
         List<String> names = new ArrayList<>();
-        collectNames(context, names);
+        collectNames(context, names, type == TargetType.Function);
         if (type == TargetType.Table && names.size() == 1 && "DUAL".equalsIgnoreCase(names.get(0))) {
             return objects.instanceObject(type, context, names.get(0));
         }
@@ -134,16 +232,25 @@ final class ObOraStatementBehaviorVisitor extends ObForOracleParserBaseVisitor<V
     }
 
     private void collectNames(ParseTree tree, List<String> names) {
+        collectNames(tree, names, false);
+    }
+
+    private void collectNames(ParseTree tree, List<String> names, boolean preserveQuotes) {
         if (tree instanceof IdentifierContext || tree instanceof Id_expressionContext) {
             ParserRuleContext context = (ParserRuleContext) tree;
-            names.add(unquote(parser.getTokenStream().getText(context.getStart(), context.getStop())));
+            String name = parser.getTokenStream().getText(context.getStart(), context.getStop());
+            if (!preserveQuotes) {
+                name = unquote(name);
+            }
+
+            names.add(name);
             return;
         }
         if (tree instanceof Link_nameContext) {
             return;
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
-            collectNames(tree.getChild(i), names);
+            collectNames(tree.getChild(i), names, preserveQuotes);
         }
     }
 
